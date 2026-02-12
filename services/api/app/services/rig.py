@@ -1,0 +1,77 @@
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
+
+from app.models.rig import Rig
+from app.models.algorithm import Algorithm
+
+
+async def create_rig(db: AsyncSession, owner_id: int, **kwargs) -> Rig:
+    rig = Rig(owner_id=owner_id, **kwargs)
+    db.add(rig)
+    await db.flush()
+    await db.refresh(rig)
+    return rig
+
+
+async def get_rig(db: AsyncSession, rig_id: int) -> Rig | None:
+    result = await db.execute(
+        select(Rig)
+        .options(selectinload(Rig.algorithm), selectinload(Rig.owner), selectinload(Rig.reviews))
+        .where(Rig.id == rig_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def update_rig(db: AsyncSession, rig: Rig, **kwargs) -> Rig:
+    for key, value in kwargs.items():
+        if value is not None and hasattr(rig, key):
+            setattr(rig, key, value)
+    await db.flush()
+    await db.refresh(rig)
+    return rig
+
+
+async def delete_rig(db: AsyncSession, rig: Rig) -> None:
+    await db.delete(rig)
+    await db.flush()
+
+
+async def list_marketplace_rigs(
+    db: AsyncSession, page: int = 1, per_page: int = 20,
+    algorithm_id: int | None = None, sort_by: str = "created_at",
+    sort_order: str = "desc", search: str | None = None,
+    min_price: float | None = None, max_price: float | None = None,
+) -> tuple[list[Rig], int]:
+    query = select(Rig).options(selectinload(Rig.algorithm), selectinload(Rig.owner)).where(Rig.status == "active")
+
+    if algorithm_id:
+        query = query.where(Rig.algorithm_id == algorithm_id)
+    if search:
+        query = query.where(Rig.name.ilike(f"%{search}%"))
+    if min_price is not None:
+        query = query.where(Rig.price_per_hour >= min_price)
+    if max_price is not None:
+        query = query.where(Rig.price_per_hour <= max_price)
+
+    count_query = select(func.count()).select_from(query.subquery())
+    total = (await db.execute(count_query)).scalar() or 0
+
+    sort_col = getattr(Rig, sort_by, Rig.created_at)
+    if sort_order == "asc":
+        query = query.order_by(sort_col.asc())
+    else:
+        query = query.order_by(sort_col.desc())
+
+    query = query.offset((page - 1) * per_page).limit(per_page)
+    result = await db.execute(query)
+    return list(result.scalars().all()), total
+
+
+async def list_user_rigs(db: AsyncSession, owner_id: int) -> list[Rig]:
+    result = await db.execute(
+        select(Rig).options(selectinload(Rig.algorithm))
+        .where(Rig.owner_id == owner_id)
+        .order_by(Rig.created_at.desc())
+    )
+    return list(result.scalars().all())
