@@ -22,26 +22,62 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Mutex for token refresh to prevent race conditions
+let isRefreshing = false;
+let refreshSubscribers: ((token: string) => void)[] = [];
+
+function onRefreshed(token: string) {
+  refreshSubscribers.forEach((cb) => cb(token));
+  refreshSubscribers = [];
+}
+
+function addRefreshSubscriber(cb: (token: string) => void) {
+  refreshSubscribers.push(cb);
+}
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (error.response?.status === 401 && typeof window !== 'undefined') {
+    const originalRequest = error.config;
+
+    if (error.response?.status === 401 && typeof window !== 'undefined' && !originalRequest._retry) {
       const refreshToken = localStorage.getItem('refresh_token');
-      if (refreshToken && !error.config._retry) {
-        error.config._retry = true;
-        try {
-          const { data } = await axios.post(`/api/v1/auth/refresh`, {
-            refresh_token: refreshToken,
+      if (!refreshToken) {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        window.location.href = '/login';
+        return Promise.reject(error);
+      }
+
+      if (isRefreshing) {
+        // Wait for the ongoing refresh to complete
+        return new Promise((resolve) => {
+          addRefreshSubscriber((token: string) => {
+            originalRequest.headers.Authorization = `Bearer ${token}`;
+            resolve(api(originalRequest));
           });
-          localStorage.setItem('access_token', data.access_token);
-          localStorage.setItem('refresh_token', data.refresh_token);
-          error.config.headers.Authorization = `Bearer ${data.access_token}`;
-          return api(error.config);
-        } catch {
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
-          window.location.href = '/login';
-        }
+        });
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        const { data } = await axios.post(`${API_URL}/api/v1/auth/refresh`, {
+          refresh_token: refreshToken,
+        });
+        localStorage.setItem('access_token', data.access_token);
+        localStorage.setItem('refresh_token', data.refresh_token);
+        originalRequest.headers.Authorization = `Bearer ${data.access_token}`;
+        onRefreshed(data.access_token);
+        return api(originalRequest);
+      } catch {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        window.location.href = '/login';
+        return Promise.reject(error);
+      } finally {
+        isRefreshing = false;
       }
     }
     return Promise.reject(error);
@@ -56,6 +92,7 @@ export const authAPI = {
     api.post<TokenResponse>('/auth/login', data),
   refresh: (refresh_token: string) =>
     api.post<TokenResponse>('/auth/refresh', { refresh_token }),
+  logout: () => api.post('/auth/logout'),
   enable2FA: () => api.post<{ secret: string; uri: string }>('/auth/2fa/enable'),
   verify2FA: (code: string) => api.post('/auth/2fa/verify', { code }),
   disable2FA: (code: string) => api.post('/auth/2fa/disable', { code }),

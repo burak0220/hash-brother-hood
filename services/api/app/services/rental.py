@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.models.rental import Rental
 from app.models.rig import Rig
 from app.models.user import User
@@ -29,6 +30,13 @@ async def create_rental(
         raise ValueError(f"Duration must be between {rig.min_rental_hours} and {rig.max_rental_hours} hours")
 
     total_cost = rig.price_per_hour * Decimal(str(duration_hours))
+
+    # Row-level lock to prevent double-spend race condition
+    locked_renter = await db.execute(
+        select(User).where(User.id == renter.id).with_for_update()
+    )
+    renter = locked_renter.scalar_one()
+
     if renter.balance < total_cost:
         raise ValueError("Insufficient balance")
 
@@ -64,8 +72,9 @@ async def create_rental(
     )
     db.add(tx_renter)
 
-    # Platform fee
-    platform_fee = total_cost * Decimal("0.03")
+    # Platform fee from config (not hardcoded)
+    fee_percent = Decimal(str(settings.PLATFORM_FEE_PERCENT)) / Decimal("100")
+    platform_fee = total_cost * fee_percent
     owner_earning = total_cost - platform_fee
 
     owner_result = await db.execute(select(User).where(User.id == rig.owner_id))
@@ -114,6 +123,21 @@ async def cancel_rental(db: AsyncSession, rental: Rental, user: User) -> Rental:
         status="completed", description=f"Refund for cancelled rental #{rental.id}",
     )
     db.add(tx)
+
+    # Deduct owner earning (reverse the payment)
+    fee_percent = Decimal(str(settings.PLATFORM_FEE_PERCENT)) / Decimal("100")
+    platform_fee = rental.total_cost * fee_percent
+    owner_earning = rental.total_cost - platform_fee
+
+    owner_result = await db.execute(select(User).where(User.id == rental.owner_id))
+    owner = owner_result.scalar_one()
+    owner.balance -= owner_earning
+
+    tx_owner_refund = Transaction(
+        user_id=rental.owner_id, type="refund", amount=owner_earning,
+        status="completed", description=f"Earning reversed for cancelled rental #{rental.id}",
+    )
+    db.add(tx_owner_refund)
 
     # Restore rig
     rig_result = await db.execute(select(Rig).where(Rig.id == rental.rig_id))

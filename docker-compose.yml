@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: hashrent
       POSTGRES_PASSWORD: ${DB_PASSWORD:-hashrent_dev}
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -18,12 +18,13 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis_dev_pass}
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis_dev_pass}", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -35,11 +36,13 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql+asyncpg://hashrent:${DB_PASSWORD:-hashrent_dev}@postgres:5432/hashrent  # docker internal still 5432
-      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql+asyncpg://hashrent:${DB_PASSWORD:-hashrent_dev}@postgres:5432/hashrent
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_dev_pass}@redis:6379
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production-abc123xyz}
+      ENV: ${ENV:-development}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
-      JWT_EXPIRY_HOURS: ${JWT_EXPIRY_HOURS:-24}
+      JWT_EXPIRY_HOURS: ${JWT_EXPIRY_HOURS:-1}
+      JWT_REFRESH_EXPIRY_DAYS: ${JWT_REFRESH_EXPIRY_DAYS:-7}
       BSC_RPC_URL: ${BSC_RPC_URL:-https://bsc-dataseed.binance.org/}
       HOT_WALLET_ADDRESS: ${HOT_WALLET_ADDRESS:-}
       HOT_WALLET_PRIVATE_KEY: ${HOT_WALLET_PRIVATE_KEY:-}
@@ -48,8 +51,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - ./services/api:/app
     restart: unless-stopped
 
   frontend:
@@ -63,9 +64,6 @@ services:
       NEXT_PUBLIC_WS_URL: ws://localhost:8000
     depends_on:
       - api
-    volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
     restart: unless-stopped
 
 volumes:

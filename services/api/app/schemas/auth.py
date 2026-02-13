@@ -1,15 +1,26 @@
-from pydantic import BaseModel, EmailStr
+import re
+
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+USERNAME_PATTERN = re.compile(r'^[a-zA-Z0-9_-]{3,30}$')
 
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    username: str
-    password: str
+    username: str = Field(min_length=3, max_length=30)
+    password: str = Field(min_length=8, max_length=128)
+
+    @field_validator('username')
+    @classmethod
+    def validate_username(cls, v: str) -> str:
+        if not USERNAME_PATTERN.match(v):
+            raise ValueError('Username must be 3-30 characters and contain only letters, numbers, hyphens and underscores')
+        return v
 
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(min_length=1, max_length=128)
     totp_code: str | None = None
 
 

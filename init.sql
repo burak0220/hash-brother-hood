@@ -10,7 +10,7 @@ CREATE TABLE users (
     username VARCHAR(100) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     role VARCHAR(20) DEFAULT 'user' CHECK (role IN ('user', 'admin')),
-    balance DECIMAL(18, 2) DEFAULT 0.00,
+    balance DECIMAL(18, 2) DEFAULT 0.00 CHECK (balance >= 0),
     is_active BOOLEAN DEFAULT true,
     is_verified BOOLEAN DEFAULT false,
     totp_secret VARCHAR(255),
@@ -36,7 +36,7 @@ CREATE TABLE algorithms (
 -- Rigs
 CREATE TABLE rigs (
     id SERIAL PRIMARY KEY,
-    owner_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    owner_id INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     name VARCHAR(200) NOT NULL,
     description TEXT,
     algorithm_id INT NOT NULL REFERENCES algorithms(id),
@@ -60,9 +60,9 @@ CREATE TABLE rigs (
 -- Rentals
 CREATE TABLE rentals (
     id SERIAL PRIMARY KEY,
-    rig_id INT NOT NULL REFERENCES rigs(id) ON DELETE CASCADE,
-    renter_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    owner_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    rig_id INT NOT NULL REFERENCES rigs(id) ON DELETE RESTRICT,
+    renter_id INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    owner_id INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     algorithm_id INT NOT NULL REFERENCES algorithms(id),
     hashrate DECIMAL(20, 4) NOT NULL,
     price_per_hour DECIMAL(18, 2) NOT NULL,
@@ -83,7 +83,7 @@ CREATE TABLE rentals (
 -- Transactions
 CREATE TABLE transactions (
     id SERIAL PRIMARY KEY,
-    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     type VARCHAR(30) NOT NULL CHECK (type IN ('deposit', 'withdrawal', 'rental_payment', 'rental_earning', 'refund', 'fee')),
     amount DECIMAL(18, 2) NOT NULL,
     fee DECIMAL(18, 2) DEFAULT 0.00,
@@ -95,6 +95,9 @@ CREATE TABLE transactions (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Unique constraint on tx_hash for deposit transactions to prevent race conditions
+CREATE UNIQUE INDEX idx_transactions_tx_hash_deposit ON transactions(tx_hash) WHERE tx_hash IS NOT NULL AND type = 'deposit' AND status IN ('completed', 'pending');
 
 -- Notifications
 CREATE TABLE notifications (
@@ -111,9 +114,9 @@ CREATE TABLE notifications (
 -- Reviews
 CREATE TABLE reviews (
     id SERIAL PRIMARY KEY,
-    rental_id INT NOT NULL REFERENCES rentals(id) ON DELETE CASCADE,
-    rig_id INT NOT NULL REFERENCES rigs(id) ON DELETE CASCADE,
-    reviewer_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    rental_id INT NOT NULL REFERENCES rentals(id) ON DELETE RESTRICT,
+    rig_id INT NOT NULL REFERENCES rigs(id) ON DELETE RESTRICT,
+    reviewer_id INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
     comment TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -131,7 +134,7 @@ CREATE TABLE platform_settings (
 -- Admin Audit Logs (plural)
 CREATE TABLE admin_audit_logs (
     id SERIAL PRIMARY KEY,
-    admin_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    admin_id INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     action VARCHAR(100) NOT NULL,
     entity_type VARCHAR(50),
     entity_id VARCHAR(100),
@@ -300,6 +303,6 @@ INSERT INTO platform_settings (key, value, description) VALUES
     ('maintenance_mode', 'false', 'Platform maintenance mode'),
     ('platform_wallet', '0x0000000000000000000000000000000000000000', 'Platform BSC wallet address for deposits');
 
--- Create default admin user (password: admin123)
-INSERT INTO users (email, username, password_hash, role, is_active, is_verified, balance) VALUES
-    ('admin@hashbrotherhood.com', 'admin', '$2b$12$tVU2tF1sxHuVnkYvDozgXeZDtBPKDpDw9fhxbPBGRt9e9zCxXHsBa', 'admin', true, true, 1000.00);
+-- NOTE: No default admin user. Create admin via CLI or migration script.
+-- Example: INSERT INTO users (email, username, password_hash, role, is_active, is_verified)
+--          VALUES ('admin@example.com', 'admin', '<bcrypt_hash>', 'admin', true, true);

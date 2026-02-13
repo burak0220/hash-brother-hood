@@ -1,9 +1,12 @@
 import math
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.user import User
@@ -14,6 +17,7 @@ from app.schemas.payment import (
 )
 from app.services.payment import deposit, withdraw, list_transactions, verify_pending_deposit
 
+limiter = Limiter(key_func=get_remote_address)
 router = APIRouter(prefix="/payments", tags=["Payments"])
 
 
@@ -37,7 +41,9 @@ async def get_platform_address(
 
 
 @router.post("/deposit", response_model=TransactionResponse)
+@limiter.limit(lambda: f"{settings.RATE_LIMIT_DEPOSIT}/minute")
 async def make_deposit(
+    request: Request,
     data: DepositRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -57,7 +63,7 @@ async def verify_deposit(
 ):
     """Re-verify a pending deposit transaction on BSC."""
     try:
-        tx = await verify_pending_deposit(db, tx_id)
+        tx = await verify_pending_deposit(db, tx_id, user.id)
         return tx
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

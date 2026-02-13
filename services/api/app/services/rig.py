@@ -5,6 +5,12 @@ from sqlalchemy.orm import selectinload
 from app.models.rig import Rig
 from app.models.algorithm import Algorithm
 
+# Whitelist of allowed sort columns to prevent SQL injection
+ALLOWED_SORT_COLUMNS = {
+    "created_at", "price_per_hour", "hashrate", "name",
+    "average_rating", "total_rentals", "uptime_percentage",
+}
+
 
 async def create_rig(db: AsyncSession, owner_id: int, **kwargs) -> Rig:
     rig = Rig(owner_id=owner_id, **kwargs)
@@ -57,7 +63,11 @@ async def list_marketplace_rigs(
     count_query = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_query)).scalar() or 0
 
+    # Sort column whitelist to prevent injection
+    if sort_by not in ALLOWED_SORT_COLUMNS:
+        sort_by = "created_at"
     sort_col = getattr(Rig, sort_by, Rig.created_at)
+
     if sort_order == "asc":
         query = query.order_by(sort_col.asc())
     else:

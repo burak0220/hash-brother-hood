@@ -8,7 +8,7 @@ interface AuthState {
   isAuthenticated: boolean;
   login: (email: string, password: string, totp_code?: string) => Promise<void>;
   register: (email: string, username: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   fetchUser: () => Promise<void>;
   setUser: (user: User) => void;
 }
@@ -30,10 +30,16 @@ export const useAuthStore = create<AuthState>((set) => ({
     await authAPI.register({ email, username, password });
   },
 
-  logout: () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    set({ user: null, isAuthenticated: false, isLoading: false });
+  logout: async () => {
+    try {
+      await authAPI.logout();
+    } catch {
+      // Ignore errors during logout (token may already be expired)
+    } finally {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      set({ user: null, isAuthenticated: false, isLoading: false });
+    }
   },
 
   fetchUser: async () => {

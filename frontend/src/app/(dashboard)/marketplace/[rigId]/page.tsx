@@ -203,8 +203,8 @@ export default function RigDetailPage() {
                     required
                   />
                   <Input
-                    label="Pool Username"
-                    placeholder="your.worker"
+                    label="Wallet Address / Worker Name"
+                    placeholder="wallet_address.worker_name"
                     value={poolUser}
                     onChange={(e) => setPoolUser(e.target.value)}
                     required

@@ -1,14 +1,14 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.user import UserPublicProfile
 
 
 class ReviewCreate(BaseModel):
     rental_id: int
-    rating: int
-    comment: str | None = None
+    rating: int = Field(ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=2000)
 
 
 class ReviewResponse(BaseModel):

@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.exc import IntegrityError
 
 from app.models.user import User
 from app.models.transaction import Transaction
@@ -18,32 +19,13 @@ async def _get_platform_address(db: AsyncSession) -> str | None:
     return setting.value if setting else None
 
 
-async def _is_tx_hash_used(db: AsyncSession, tx_hash: str) -> bool:
-    """Check if a tx_hash has already been used for a deposit."""
-    result = await db.execute(
-        select(func.count(Transaction.id)).where(
-            Transaction.tx_hash == tx_hash,
-            Transaction.type == "deposit",
-            Transaction.status.in_(["completed", "pending"]),
-        )
-    )
-    return (result.scalar() or 0) > 0
-
-
 async def deposit(db: AsyncSession, user: User, amount: Decimal, tx_hash: str) -> Transaction:
     """
     Process a USDT deposit with BSC blockchain verification.
 
-    1. Check tx_hash not already used
-    2. Verify transaction on BSC
-    3. If verified: credit balance immediately, status=completed
-    4. If pending (not yet confirmed): create pending transaction
-    5. If invalid: raise error
+    Uses a unique constraint on tx_hash to prevent race conditions
+    instead of check-then-insert pattern.
     """
-    # Prevent double-use of tx_hash
-    if await _is_tx_hash_used(db, tx_hash):
-        raise ValueError("This transaction hash has already been used for a deposit")
-
     # Get platform wallet address for verification
     platform_address = await _get_platform_address(db)
 
@@ -52,7 +34,6 @@ async def deposit(db: AsyncSession, user: User, amount: Decimal, tx_hash: str) -
         result = await bsc_verify_deposit(tx_hash, amount, platform_address)
 
         if result["verified"]:
-            # Use on-chain amount (may be slightly more than expected)
             verified_amount = Decimal(str(result["amount"]))
             user.balance += verified_amount
             tx = Transaction(
@@ -62,40 +43,36 @@ async def deposit(db: AsyncSession, user: User, amount: Decimal, tx_hash: str) -
                 description=f"Deposit of {verified_amount} USDT (verified on BSC, block #{result.get('block_number')})",
             )
             db.add(tx)
-            await db.flush()
+            try:
+                await db.flush()
+            except IntegrityError:
+                await db.rollback()
+                raise ValueError("This transaction hash has already been used for a deposit")
             await db.refresh(tx)
             return tx
 
         elif result["status"] == "pending":
-            # Transaction exists but not yet confirmed - create pending deposit
             tx = Transaction(
                 user_id=user.id, type="deposit", amount=amount,
                 status="pending", tx_hash=tx_hash,
                 description="Deposit pending BSC confirmation",
             )
             db.add(tx)
-            await db.flush()
+            try:
+                await db.flush()
+            except IntegrityError:
+                await db.rollback()
+                raise ValueError("This transaction hash has already been used for a deposit")
             await db.refresh(tx)
             return tx
 
         else:
-            # Verification failed
             raise ValueError(result.get("error", "Transaction verification failed"))
     else:
-        # No platform wallet configured - fallback to manual mode (trust user)
-        user.balance += amount
-        tx = Transaction(
-            user_id=user.id, type="deposit", amount=amount,
-            status="completed", tx_hash=tx_hash,
-            description=f"Deposit of {amount} USDT (manual - no wallet configured)",
-        )
-        db.add(tx)
-        await db.flush()
-        await db.refresh(tx)
-        return tx
+        raise ValueError("Deposits are temporarily unavailable. Platform wallet is not configured.")
 
 
-async def verify_pending_deposit(db: AsyncSession, tx_id: int) -> Transaction:
+async def verify_pending_deposit(db: AsyncSession, tx_id: int, user_id: int) -> Transaction:
     """
     Re-verify a pending deposit transaction on BSC.
     Called by user or admin to check if a pending deposit has been confirmed.
@@ -105,6 +82,8 @@ async def verify_pending_deposit(db: AsyncSession, tx_id: int) -> Transaction:
     )
     tx = result.scalar_one_or_none()
     if not tx:
+        raise ValueError("Transaction not found")
+    if tx.user_id != user_id:
         raise ValueError("Transaction not found")
     if tx.type != "deposit" or tx.status != "pending":
         raise ValueError("Transaction is not a pending deposit")

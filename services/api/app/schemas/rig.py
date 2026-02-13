@@ -1,37 +1,43 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.algorithm import AlgorithmResponse
 from app.schemas.user import UserPublicProfile
 
 
 class RigCreate(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=200)
     description: str | None = None
     algorithm_id: int
-    hashrate: Decimal
-    price_per_hour: Decimal
-    min_rental_hours: int = 1
-    max_rental_hours: int = 720
+    hashrate: Decimal = Field(gt=0)
+    price_per_hour: Decimal = Field(gt=0)
+    min_rental_hours: int = Field(default=1, ge=1)
+    max_rental_hours: int = Field(default=720, ge=1, le=8760)
     region: str = "auto"
     stratum_host: str | None = None
-    stratum_port: int | None = None
+    stratum_port: int | None = Field(default=None, ge=1, le=65535)
     worker_prefix: str | None = None
+
+    @model_validator(mode='after')
+    def validate_rental_hours(self):
+        if self.min_rental_hours > self.max_rental_hours:
+            raise ValueError('min_rental_hours must be less than or equal to max_rental_hours')
+        return self
 
 
 class RigUpdate(BaseModel):
-    name: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = None
-    hashrate: Decimal | None = None
-    price_per_hour: Decimal | None = None
-    min_rental_hours: int | None = None
-    max_rental_hours: int | None = None
+    hashrate: Decimal | None = Field(default=None, gt=0)
+    price_per_hour: Decimal | None = Field(default=None, gt=0)
+    min_rental_hours: int | None = Field(default=None, ge=1)
+    max_rental_hours: int | None = Field(default=None, ge=1, le=8760)
     status: str | None = None
     region: str | None = None
     stratum_host: str | None = None
-    stratum_port: int | None = None
+    stratum_port: int | None = Field(default=None, ge=1, le=65535)
     worker_prefix: str | None = None
 
 

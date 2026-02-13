@@ -2,10 +2,11 @@ import re
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 BSC_ADDRESS_PATTERN = re.compile(r'^0x[0-9a-fA-F]{40}$')
+BSC_TX_HASH_PATTERN = re.compile(r'^0x[0-9a-fA-F]{64}$')
 
 
 class BalanceResponse(BaseModel):
@@ -13,12 +14,19 @@ class BalanceResponse(BaseModel):
 
 
 class DepositRequest(BaseModel):
-    amount: Decimal
+    amount: Decimal = Field(gt=0, le=1_000_000)
     tx_hash: str
+
+    @field_validator('tx_hash')
+    @classmethod
+    def validate_tx_hash(cls, v: str) -> str:
+        if not BSC_TX_HASH_PATTERN.match(v):
+            raise ValueError('Invalid transaction hash (must be 0x + 64 hex characters)')
+        return v
 
 
 class WithdrawRequest(BaseModel):
-    amount: Decimal
+    amount: Decimal = Field(ge=10, le=1_000_000)
     wallet_address: str
 
     @field_validator('wallet_address')

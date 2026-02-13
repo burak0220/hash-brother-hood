@@ -1,24 +1,26 @@
 from datetime import datetime
+from decimal import Decimal
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AdminUserUpdate(BaseModel):
     is_active: bool | None = None
     is_verified: bool | None = None
-    role: str | None = None
-    balance: float | None = None
+    role: Literal["user", "admin"] | None = None
+    balance: Decimal | None = None
 
 
 class AdminBalanceAdjust(BaseModel):
-    amount: float
-    reason: str = ""
+    amount: Decimal
+    reason: str = Field(default="", max_length=500)
 
 
 class AdminSendNotification(BaseModel):
     user_id: int | None = None  # None = broadcast to all
-    title: str
-    message: str
+    title: str = Field(min_length=1, max_length=255)
+    message: str = Field(min_length=1, max_length=2000)
     link: str | None = None
 
 
