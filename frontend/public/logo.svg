@@ -1,82 +1,79 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 80" fill="none">
   <defs>
-    <linearGradient id="iconGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#00f0ff"/>
-      <stop offset="50%" stop-color="#00c8e0"/>
-      <stop offset="100%" stop-color="#0090ff"/>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00e5ff"/>
+      <stop offset="100%" stop-color="#0070ff"/>
     </linearGradient>
-    <linearGradient id="iconGrad2" x1="0%" y1="100%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#00f0ff" stop-opacity="0.6"/>
-      <stop offset="100%" stop-color="#00d4ff" stop-opacity="0.1"/>
+    <linearGradient id="accentV" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#00e5ff"/>
+      <stop offset="100%" stop-color="#0055dd"/>
     </linearGradient>
-    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="100%" stop-color="#c0d8e8"/>
+    <linearGradient id="white" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f0f8ff"/>
+      <stop offset="100%" stop-color="#ffffff"/>
     </linearGradient>
-    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#00f0ff"/>
-      <stop offset="100%" stop-color="#0090ff"/>
+    <linearGradient id="dim" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#7ab0cc"/>
+      <stop offset="100%" stop-color="#5090b0"/>
     </linearGradient>
-    <filter id="glow">
-      <feGaussianBlur stdDeviation="2" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
+    <filter id="g" x="-8%" y="-8%" width="116%" height="116%">
+      <feGaussianBlur stdDeviation="1" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
-    <filter id="softGlow">
-      <feGaussianBlur stdDeviation="3" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
+    <filter id="ig" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1.5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="bg" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="10"/>
     </filter>
   </defs>
 
-  <!-- Icon: Hexagonal shield with hash/mining symbol -->
-  <g transform="translate(50, 50)" filter="url(#softGlow)">
-    <!-- Outer hexagon -->
-    <polygon points="0,-38 33,-19 33,19 0,38 -33,19 -33,-19"
-             fill="none" stroke="url(#iconGrad)" stroke-width="2.5" opacity="0.9"/>
-    <!-- Inner hexagon -->
-    <polygon points="0,-28 24,-14 24,14 0,28 -24,14 -24,-14"
-             fill="url(#iconGrad2)" stroke="url(#iconGrad)" stroke-width="1.5" opacity="0.4"/>
+  <!-- === ICON: # integrated into a rounded square === -->
+  <g transform="translate(6, 8)">
+    <!-- Ambient glow -->
+    <rect x="4" y="4" width="56" height="56" rx="16" fill="#00c0ff" opacity="0.07" filter="url(#bg)"/>
 
-    <!-- Hash symbol # (mining reference) -->
-    <g stroke="url(#iconGrad)" stroke-width="3" stroke-linecap="round" filter="url(#glow)">
-      <line x1="-10" y1="-16" x2="-10" y2="16"/>
-      <line x1="10" y1="-16" x2="10" y2="16"/>
-      <line x1="-18" y1="-6" x2="18" y2="-6"/>
-      <line x1="-18" y1="6" x2="18" y2="6"/>
+    <!-- Container -->
+    <rect x="4" y="4" width="56" height="56" rx="14" fill="none" stroke="url(#accent)" stroke-width="2" opacity="0.5"/>
+    <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#accentV)" opacity="0.06"/>
+
+    <!-- # Hash symbol - bold, modern, slightly rounded -->
+    <g filter="url(#ig)">
+      <!-- Verticals - slightly tilted for dynamism -->
+      <rect x="23" y="12" width="4.5" height="40" rx="2.2" fill="url(#accent)" transform="rotate(-6, 25, 32)"/>
+      <rect x="37" y="12" width="4.5" height="40" rx="2.2" fill="url(#accent)" transform="rotate(-6, 39, 32)"/>
+      <!-- Horizontals -->
+      <rect x="11" y="23" width="42" height="4" rx="2" fill="url(#accent)" opacity="0.9"/>
+      <rect x="11" y="36" width="42" height="4" rx="2" fill="url(#accent)" opacity="0.9"/>
     </g>
-
-    <!-- Corner accent nodes -->
-    <circle cx="0" cy="-38" r="2.5" fill="#00f0ff" opacity="0.8"/>
-    <circle cx="33" cy="-19" r="2" fill="#00f0ff" opacity="0.5"/>
-    <circle cx="33" cy="19" r="2" fill="#00f0ff" opacity="0.5"/>
-    <circle cx="0" cy="38" r="2.5" fill="#00f0ff" opacity="0.8"/>
-    <circle cx="-33" cy="19" r="2" fill="#00f0ff" opacity="0.5"/>
-    <circle cx="-33" cy="-19" r="2" fill="#00f0ff" opacity="0.5"/>
   </g>
 
-  <!-- Brand text -->
-  <g transform="translate(100, 42)">
-    <text font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="30" font-weight="800" fill="url(#textGrad)" letter-spacing="-0.5">
-      Hash
-    </text>
-    <text x="87" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="30" font-weight="800" fill="url(#accentGrad)" letter-spacing="-0.5" filter="url(#glow)">
-      Brother
-    </text>
-    <text x="225" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="30" font-weight="800" fill="url(#textGrad)" letter-spacing="-0.5">
-      Hood
-    </text>
+  <!-- === WORDMARK === -->
+  <g transform="translate(78, 0)">
+
+    <!-- hashbrotherhood - unified, lowercase, modern -->
+    <!-- "hash" part - white/light -->
+    <text y="43" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif"
+          font-size="34" font-weight="800" letter-spacing="-1.5" fill="url(#white)">hash</text>
+
+    <!-- "brother" part - cyan gradient accent -->
+    <text x="82" y="43" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif"
+          font-size="34" font-weight="800" letter-spacing="-1.5" fill="url(#accent)" filter="url(#g)">brother</text>
+
+    <!-- "hood" part - white/light -->
+    <text x="220" y="43" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif"
+          font-size="34" font-weight="800" letter-spacing="-1.5" fill="url(#white)">hood</text>
+
+    <!-- Accent dot between sections - subtle -->
+    <circle cx="80" cy="43" r="1.8" fill="#00e5ff" opacity="0.4"/>
+    <circle cx="218" cy="43" r="1.8" fill="#00e5ff" opacity="0.4"/>
+
+    <!-- Tagline -->
+    <text y="62" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif"
+          font-size="9" fill="url(#dim)" letter-spacing="4.5" font-weight="600" text-transform="uppercase">HASHRATE MARKETPLACE</text>
+
+    <!-- Underline accent -->
+    <rect y="48" width="70" height="1.5" rx="0.75" fill="url(#accent)" opacity="0.25"/>
   </g>
-
-  <!-- Tagline -->
-  <text x="100" y="68" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10" fill="#5a7a8a" letter-spacing="3.5" font-weight="500">
-    HASHRATE MARKETPLACE
-  </text>
-
-  <!-- Subtle accent line -->
-  <line x1="100" y1="52" x2="310" y2="52" stroke="url(#accentGrad)" stroke-width="0.5" opacity="0.3"/>
 </svg>

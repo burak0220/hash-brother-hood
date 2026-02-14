@@ -18,8 +18,41 @@ docs_url = "/docs" if settings.ENV != "production" else None
 redoc_url = "/redoc" if settings.ENV != "production" else None
 
 
+async def _ensure_admin():
+    """Ensure admin account exists with correct password on startup."""
+    import logging
+    from app.core.database import async_session
+    from app.core.security import hash_password, verify_password
+    from sqlalchemy import text
+
+    logger = logging.getLogger(__name__)
+    default_pw = "Admin123!"
+
+    try:
+        async with async_session() as db:
+            result = await db.execute(text("SELECT id, password_hash FROM users WHERE email = 'admin@hashbrotherhood.com'"))
+            row = result.fetchone()
+            if row:
+                if not verify_password(default_pw, row[1]):
+                    new_hash = hash_password(default_pw)
+                    await db.execute(text("UPDATE users SET password_hash = :h WHERE id = :id"), {"h": new_hash, "id": row[0]})
+                    await db.commit()
+                    logger.info("Admin password hash re-synced")
+            else:
+                new_hash = hash_password(default_pw)
+                await db.execute(text(
+                    "INSERT INTO users (email, username, password_hash, role, is_active, is_verified) "
+                    "VALUES ('admin@hashbrotherhood.com', 'admin', :h, 'admin', true, true)"
+                ), {"h": new_hash})
+                await db.commit()
+                logger.info("Admin account created")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Admin check skipped: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await _ensure_admin()
     # Start background scheduler
     task = asyncio.create_task(scheduler_loop())
     yield
