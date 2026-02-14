@@ -359,4 +359,4 @@ INSERT INTO platform_settings (key, value, description) VALUES
 
 -- Default admin user (password: Admin123! — CHANGE IN PRODUCTION!)
 INSERT INTO users (email, username, password_hash, role, is_active, is_verified)
-VALUES ('admin@hashbrotherhood.com', 'admin', '$2b$12$fs0yQtLaZz/8s9WxhoNL2OB5bFwX4seOOcmbjn4XkcYwln1OGDFdO', 'admin', true, true);
+VALUES ('admin@hashbrotherhood.com', 'admin', '$2b$12$jXXH4aZPRgOp0cLNGqv.4OlkeyHlwnesYUehmoCPzqzmRv3wKZ8WC', 'admin', true, true);
