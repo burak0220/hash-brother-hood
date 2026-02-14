@@ -6,7 +6,7 @@ import Button from '@/components/ui/button';
 import Input from '@/components/ui/input';
 import Select from '@/components/ui/select';
 import { rigsAPI } from '@/lib/api';
-import { formatUSDT, formatHashrate, statusBadgeColor } from '@/lib/utils';
+import { formatUSDT, formatHashrate, statusBadgeColor, getUnitOptions, convertHashrate } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import type { Rig } from '@/types';
 
@@ -22,6 +22,7 @@ export default function ManageRigPage() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [hashrate, setHashrate] = useState('');
+  const [selectedUnit, setSelectedUnit] = useState('');
   const [pricePerHour, setPricePerHour] = useState('');
   const [status, setStatus] = useState('');
   const [minHours, setMinHours] = useState('');
@@ -33,38 +34,54 @@ export default function ManageRigPage() {
       setName(data.name);
       setDescription(data.description || '');
       setHashrate(data.hashrate.toString());
+      setSelectedUnit(data.algorithm?.unit || 'TH/s');
       setPricePerHour(data.price_per_hour.toString());
       setStatus(data.status);
       setMinHours(data.min_rental_hours.toString());
       setMaxHours(data.max_rental_hours.toString());
-    }).catch(() => toast.error('Failed to load rig')).finally(() => setLoading(false));
+    }).catch(() => toast.error('Unable to load rig details. Please try again.')).finally(() => setLoading(false));
   }, [rigId]);
+
+  const algoBaseUnit = rig?.algorithm?.unit || 'TH/s';
+  const unitOptions = getUnitOptions(algoBaseUnit);
+
+  // Preview converted hashrate
+  const previewHashrate = hashrate
+    ? convertHashrate(parseFloat(hashrate) || 0, selectedUnit, algoBaseUnit)
+    : 0;
 
   const handleSave = async () => {
     setSaving(true);
     try {
+      // Convert hashrate from selected unit to algorithm's base unit
+      const inputValue = parseFloat(hashrate);
+      const convertedHashrate = convertHashrate(inputValue, selectedUnit, algoBaseUnit);
+
       const { data } = await rigsAPI.update(rigId, {
         name, description: description || null,
-        hashrate: parseFloat(hashrate), price_per_hour: parseFloat(pricePerHour),
+        hashrate: convertedHashrate, price_per_hour: parseFloat(pricePerHour),
         status, min_rental_hours: parseInt(minHours), max_rental_hours: parseInt(maxHours),
       });
       setRig(data);
+      // Reset hashrate display to base unit value
+      setHashrate(data.hashrate.toString());
+      setSelectedUnit(data.algorithm?.unit || algoBaseUnit);
       setEditing(false);
-      toast.success('Rig updated');
+      toast.success('Your rig has been updated successfully.');
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Failed to update rig');
+      toast.error(err.response?.data?.detail || 'Unable to update the rig. Please try again.');
     }
     setSaving(false);
   };
 
   const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this rig?')) return;
+    if (!confirm('Are you sure you want to permanently delete this rig? This action cannot be undone.')) return;
     try {
       await rigsAPI.delete(rigId);
-      toast.success('Rig deleted');
+      toast.success('Your rig has been removed from the platform.');
       router.push('/my-rigs');
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Failed to delete rig');
+      toast.error(err.response?.data?.detail || 'Unable to delete the rig. It may have active rentals.');
     }
   };
 
@@ -118,7 +135,27 @@ export default function ManageRigPage() {
                 onChange={(e) => setDescription(e.target.value)}
               />
             </div>
-            <Input label="Hashrate" type="number" step="0.0001" value={hashrate} onChange={(e) => setHashrate(e.target.value)} />
+            {/* Hashrate + Unit Selector */}
+            <div>
+              <label className="block text-sm font-medium text-dark-300 mb-1">Hashrate</label>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <Input type="number" step="0.0001" min="0.0001" value={hashrate} onChange={(e) => setHashrate(e.target.value)} />
+                </div>
+                <div className="w-44">
+                  <Select
+                    options={unitOptions}
+                    value={selectedUnit}
+                    onChange={(e) => setSelectedUnit(e.target.value)}
+                  />
+                </div>
+              </div>
+              {hashrate && selectedUnit !== algoBaseUnit && previewHashrate > 0 && (
+                <p className="text-xs text-dark-500 mt-1">
+                  = {previewHashrate.toLocaleString(undefined, { maximumFractionDigits: 4 })} {algoBaseUnit}
+                </p>
+              )}
+            </div>
             <Input label="Price per Hour (USDT)" type="number" step="0.01" value={pricePerHour} onChange={(e) => setPricePerHour(e.target.value)} />
             <Select
               label="Status"

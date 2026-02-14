@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import Image from 'next/image';
+
 import { useEffect, useRef, useState } from 'react';
 
 function AnimatedCounter({ target, suffix = '' }: { target: string; suffix?: string }) {
@@ -77,7 +77,7 @@ export default function LandingPage() {
       <nav className={`fixed top-0 w-full z-50 transition-all duration-500 ${scrollY > 50 ? 'bg-dark-950/90 backdrop-blur-xl border-b border-primary-400/10' : ''}`}>
         <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2 opacity-80 hover:opacity-100 transition-opacity">
-            <Image src="/logo.png" alt="HB" width={32} height={32} className="logo-blend-sm" />
+            <img src="/logo.svg" alt="HB" className="w-[32px] h-[32px] object-contain" />
             <span className="text-sm font-bold text-primary-400 tracking-widest uppercase hidden sm:block">HBH</span>
           </Link>
           <div className="flex items-center gap-2">
@@ -103,13 +103,10 @@ export default function LandingPage() {
 
         {/* Logo */}
         <div className={`relative z-10 transition-all duration-1000 ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
-          <Image
-            src="/logo.png"
+          <img
+            src="/logo.svg"
             alt="HashBrotherHood"
-            width={480}
-            height={300}
-            className="logo-blend drop-shadow-[0_0_80px_rgba(0,240,255,0.35)]"
-            priority
+            className="w-[480px] h-auto drop-shadow-[0_0_60px_rgba(0,240,255,0.2)]"
           />
         </div>
 
@@ -326,7 +323,7 @@ export default function LandingPage() {
       {/* === SCREEN 5: CTA - MINIMAL === */}
       <section className="relative py-32 px-6">
         <div className="max-w-2xl mx-auto text-center">
-          <Image src="/logo.png" alt="HBH" width={180} height={120} className="mx-auto mb-8 opacity-60 logo-blend-footer" />
+          <img src="/logo.svg" alt="HBH" className="mx-auto mb-8 w-[180px] h-auto opacity-50" />
           <h2 className="text-3xl md:text-4xl font-black mb-4">
             Join the <span className="neon-text">Brotherhood</span>
           </h2>

@@ -1,5 +1,4 @@
 'use client';
-import Image from 'next/image';
 import Link from 'next/link';
 import Card, { CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 
@@ -56,7 +55,7 @@ export default function AboutPage() {
       <div className="relative overflow-hidden neon-card rounded-2xl p-8 text-center">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-primary-400/5 rounded-full blur-[120px]" />
         <div className="relative">
-          <Image src="/logo.png" alt="HashBrotherHood" width={240} height={150} className="mx-auto logo-blend drop-shadow-[0_0_40px_rgba(0,240,255,0.3)] mb-6" />
+          <img src="/logo.svg" alt="HashBrotherHood" className="mx-auto w-[280px] h-auto drop-shadow-[0_0_30px_rgba(0,240,255,0.15)] mb-6" />
           <h1 className="text-3xl font-black text-white mb-3">
             The Mining <span className="neon-text">Brotherhood</span>
           </h1>

@@ -26,7 +26,7 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 @limiter.limit(lambda: f"{settings.RATE_LIMIT_REGISTER}/minute")
 async def register(request: Request, data: RegisterRequest, db: AsyncSession = Depends(get_db)):
     try:
-        user = await register_user(db, data.email, data.username, data.password)
+        user = await register_user(db, data.email, data.username, data.password, data.referral_code)
         return user
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -37,18 +37,18 @@ async def register(request: Request, data: RegisterRequest, db: AsyncSession = D
 async def login(request: Request, data: LoginRequest, db: AsyncSession = Depends(get_db)):
     user = await authenticate_user(db, data.email, data.password)
     if not user:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail="The email or password you entered is incorrect. Please try again.")
     if not user.is_active:
-        raise HTTPException(status_code=403, detail="Account is disabled")
+        raise HTTPException(status_code=403, detail="Your account has been suspended. Please contact support for assistance.")
 
     if user.totp_enabled:
         if not data.totp_code:
-            raise HTTPException(status_code=400, detail="2FA code required")
+            raise HTTPException(status_code=400, detail="Two-factor authentication is required. Please enter your 2FA code.")
         if not verify_totp(user.totp_secret, data.totp_code):
-            raise HTTPException(status_code=400, detail="Invalid 2FA code")
+            raise HTTPException(status_code=400, detail="The 2FA code you entered is incorrect. Please check your authenticator app and try again.")
         # TOTP replay protection
         if not await mark_totp_used(user.id, data.totp_code):
-            raise HTTPException(status_code=400, detail="2FA code already used. Wait for a new code.")
+            raise HTTPException(status_code=400, detail="This 2FA code has already been used. Please wait for your authenticator to generate a new code.")
 
     return create_tokens(user.id)
 
@@ -57,33 +57,40 @@ async def login(request: Request, data: LoginRequest, db: AsyncSession = Depends
 async def refresh_token(data: RefreshRequest, db: AsyncSession = Depends(get_db)):
     payload = decode_token(data.refresh_token)
     if not payload or payload.get("type") != "refresh":
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+        raise HTTPException(status_code=401, detail="Your session has expired. Please sign in again.")
     user_id = payload.get("sub")
     if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+        raise HTTPException(status_code=401, detail="Your session has expired. Please sign in again.")
 
     try:
         uid = int(user_id)
     except (ValueError, TypeError):
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
+        raise HTTPException(status_code=401, detail="Your session has expired. Please sign in again.")
 
     # Check user is still active
     result = await db.execute(select(User).where(User.id == uid))
     user = result.scalar_one_or_none()
     if not user or not user.is_active:
-        raise HTTPException(status_code=401, detail="User not found or inactive")
+        raise HTTPException(status_code=401, detail="Your account is no longer active. Please contact support.")
 
     return create_tokens(uid)
 
 
 @router.post("/logout", response_model=MessageResponse)
 async def logout(
+    request: Request,
     user: User = Depends(get_current_user),
 ):
     """Logout by blacklisting the current access token."""
-    # The token is already validated by get_current_user
-    # We blacklist it via the jti claim
-    from fastapi import Request as Req
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    payload = decode_token(token)
+    if payload and payload.get("jti"):
+        # Blacklist for remaining token lifetime
+        exp = payload.get("exp", 0)
+        from datetime import datetime, timezone
+        remaining = max(int(exp - datetime.now(timezone.utc).timestamp()), 0)
+        if remaining > 0:
+            await blacklist_token(payload["jti"], remaining)
     return {"message": "Logged out successfully"}
 
 
@@ -95,7 +102,7 @@ async def enable_2fa(
     db: AsyncSession = Depends(get_db),
 ):
     if user.totp_enabled:
-        raise HTTPException(status_code=400, detail="2FA already enabled")
+        raise HTTPException(status_code=400, detail="Two-factor authentication is already enabled on your account.")
     secret = generate_totp_secret()
     user.totp_secret = secret
     await db.flush()
@@ -112,9 +119,9 @@ async def verify_2fa(
     db: AsyncSession = Depends(get_db),
 ):
     if not user.totp_secret:
-        raise HTTPException(status_code=400, detail="Enable 2FA first")
+        raise HTTPException(status_code=400, detail="Please initiate 2FA setup first before verifying.")
     if not verify_totp(user.totp_secret, data.code):
-        raise HTTPException(status_code=400, detail="Invalid code")
+        raise HTTPException(status_code=400, detail="The verification code is incorrect. Please check your authenticator app and try again.")
     user.totp_enabled = True
     await db.flush()
     return {"message": "2FA enabled successfully"}
@@ -129,9 +136,9 @@ async def disable_2fa(
     db: AsyncSession = Depends(get_db),
 ):
     if not user.totp_enabled:
-        raise HTTPException(status_code=400, detail="2FA is not enabled")
+        raise HTTPException(status_code=400, detail="Two-factor authentication is not currently enabled on your account.")
     if not verify_totp(user.totp_secret, data.code):
-        raise HTTPException(status_code=400, detail="Invalid code")
+        raise HTTPException(status_code=400, detail="The verification code is incorrect. Please check your authenticator app and try again.")
     user.totp_enabled = False
     user.totp_secret = None
     await db.flush()

@@ -34,3 +34,4 @@ class Rental(Base):
     renter = relationship("User", foreign_keys=[renter_id])
     owner = relationship("User", foreign_keys=[owner_id])
     algorithm = relationship("Algorithm")
+    hashrate_logs = relationship("HashrateLog", back_populates="rental")

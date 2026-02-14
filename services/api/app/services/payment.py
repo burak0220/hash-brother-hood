@@ -47,7 +47,7 @@ async def deposit(db: AsyncSession, user: User, amount: Decimal, tx_hash: str) -
                 await db.flush()
             except IntegrityError:
                 await db.rollback()
-                raise ValueError("This transaction hash has already been used for a deposit")
+                raise ValueError("This transaction has already been processed. Each transaction hash can only be used once.")
             await db.refresh(tx)
             return tx
 
@@ -62,14 +62,14 @@ async def deposit(db: AsyncSession, user: User, amount: Decimal, tx_hash: str) -
                 await db.flush()
             except IntegrityError:
                 await db.rollback()
-                raise ValueError("This transaction hash has already been used for a deposit")
+                raise ValueError("This transaction has already been processed. Each transaction hash can only be used once.")
             await db.refresh(tx)
             return tx
 
         else:
-            raise ValueError(result.get("error", "Transaction verification failed"))
+            raise ValueError(result.get("error", "We could not verify this transaction on the blockchain. Please check the transaction hash and try again."))
     else:
-        raise ValueError("Deposits are temporarily unavailable. Platform wallet is not configured.")
+        raise ValueError("Deposits are temporarily unavailable due to system maintenance. Please try again later.")
 
 
 async def verify_pending_deposit(db: AsyncSession, tx_id: int, user_id: int) -> Transaction:
@@ -82,15 +82,15 @@ async def verify_pending_deposit(db: AsyncSession, tx_id: int, user_id: int) -> 
     )
     tx = result.scalar_one_or_none()
     if not tx:
-        raise ValueError("Transaction not found")
+        raise ValueError("The requested transaction could not be found.")
     if tx.user_id != user_id:
-        raise ValueError("Transaction not found")
+        raise ValueError("The requested transaction could not be found.")
     if tx.type != "deposit" or tx.status != "pending":
-        raise ValueError("Transaction is not a pending deposit")
+        raise ValueError("This transaction is not a pending deposit and cannot be verified.")
 
     platform_address = await _get_platform_address(db)
     if not platform_address:
-        raise ValueError("Platform wallet not configured")
+        raise ValueError("Verification is temporarily unavailable due to system configuration. Please contact support.")
 
     bsc_result = await bsc_verify_deposit(tx.tx_hash, tx.amount, platform_address)
 
@@ -111,20 +111,20 @@ async def verify_pending_deposit(db: AsyncSession, tx_id: int, user_id: int) -> 
         return tx
 
     elif bsc_result["status"] == "pending":
-        raise ValueError("Transaction still pending confirmation on BSC")
+        raise ValueError("Your transaction is still awaiting confirmation on the BSC network. This usually takes 15-30 seconds. Please try again shortly.")
     else:
         tx.status = "failed"
         tx.description = f"Verification failed: {bsc_result.get('error')}"
         await db.flush()
         await db.refresh(tx)
-        raise ValueError(bsc_result.get("error", "Verification failed"))
+        raise ValueError(bsc_result.get("error", "Transaction verification failed. The transaction may be invalid or sent to the wrong address."))
 
 
 async def withdraw(db: AsyncSession, user: User, amount: Decimal, wallet_address: str) -> Transaction:
     fee = Decimal("1.00")
     total = amount + fee
     if user.balance < total:
-        raise ValueError("Insufficient balance")
+        raise ValueError("Insufficient balance for this withdrawal. Please ensure you have enough funds including the 1 USDT network fee.")
 
     user.balance -= total
     tx = Transaction(

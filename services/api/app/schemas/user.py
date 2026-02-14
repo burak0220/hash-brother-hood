@@ -20,6 +20,8 @@ class UserResponse(BaseModel):
     avatar_url: str | None = None
     bio: str | None = None
     bsc_wallet_address: str | None = None
+    deposit_address: str | None = None
+    referral_code: str | None = None
     created_at: datetime
 
     class Config:
@@ -36,14 +38,14 @@ class UserUpdate(BaseModel):
     @classmethod
     def validate_username(cls, v: str | None) -> str | None:
         if v is not None and not USERNAME_PATTERN.match(v):
-            raise ValueError('Username must be 3-30 characters and contain only letters, numbers, hyphens and underscores')
+            raise ValueError('Username must be 3-30 characters long and can only contain letters, numbers, hyphens (-) and underscores (_).')
         return v
 
     @field_validator('bsc_wallet_address')
     @classmethod
     def validate_bsc_address(cls, v: str | None) -> str | None:
         if v is not None and not BSC_ADDRESS_PATTERN.match(v):
-            raise ValueError('Invalid BSC wallet address (must be 0x + 40 hex characters)')
+            raise ValueError('Please enter a valid BSC wallet address starting with 0x followed by 40 hexadecimal characters.')
         return v
 
 

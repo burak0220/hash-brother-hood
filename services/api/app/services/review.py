@@ -13,17 +13,17 @@ async def create_review(
     result = await db.execute(select(Rental).where(Rental.id == rental_id))
     rental = result.scalar_one_or_none()
     if not rental:
-        raise ValueError("Rental not found")
+        raise ValueError("The rental associated with this review could not be found.")
     if rental.renter_id != reviewer_id:
-        raise ValueError("Only the renter can leave a review")
+        raise ValueError("Only the renter can leave a review for this rental.")
     if rental.status not in ("completed", "active"):
-        raise ValueError("Cannot review this rental")
+        raise ValueError("Reviews can only be submitted for active or completed rentals.")
 
     existing = await db.execute(
         select(Review).where(Review.rental_id == rental_id, Review.reviewer_id == reviewer_id)
     )
     if existing.scalar_one_or_none():
-        raise ValueError("Already reviewed")
+        raise ValueError("You have already submitted a review for this rental.")
 
     review = Review(
         rental_id=rental_id, rig_id=rental.rig_id,

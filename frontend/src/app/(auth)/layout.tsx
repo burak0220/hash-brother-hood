@@ -1,6 +1,5 @@
 'use client';
 import Link from 'next/link';
-import Image from 'next/image';
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -19,7 +18,13 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <div className="relative w-full max-w-md">
         <div className="text-center mb-8">
           <Link href="/" className="inline-block">
-            <Image src="/logo.png" alt="HashBrotherHood" width={220} height={140} className="mx-auto logo-blend drop-shadow-[0_0_40px_rgba(0,240,255,0.3)]" />
+            <div className="logo-container-auth">
+              <img
+                src="/logo.svg"
+                alt="HashBrotherHood"
+                className="mx-auto w-[260px] h-auto drop-shadow-[0_0_30px_rgba(0,240,255,0.15)] hover:drop-shadow-[0_0_40px_rgba(0,240,255,0.25)] transition-all duration-500"
+              />
+            </div>
           </Link>
         </div>
         <div className="neon-card rounded-2xl p-8 shadow-2xl">

@@ -13,15 +13,20 @@ class Settings(BaseSettings):
     PLATFORM_FEE_PERCENT: float = 3.0
 
     # BSC Network
-    BSC_RPC_URL: str = "https://bsc-dataseed.binance.org/"
+    BSC_NETWORK: str = "testnet"  # "mainnet" or "testnet"
+    BSC_RPC_URL: str = "https://data-seed-prebsc-1-s1.binance.org:8545/"
     HOT_WALLET_ADDRESS: str = ""
     HOT_WALLET_PRIVATE_KEY: str = ""
+    HD_WALLET_MNEMONIC: str = ""  # BIP39 mnemonic for generating user deposit addresses
 
     # Rate limiting
     RATE_LIMIT_LOGIN: int = 5  # per minute
     RATE_LIMIT_REGISTER: int = 3  # per minute
     RATE_LIMIT_DEPOSIT: int = 10  # per minute
     RATE_LIMIT_2FA: int = 5  # per minute
+
+    # Internal services
+    INTERNAL_API_KEY: str = "internal-secret-key-change-in-production-xyz789"  # For stratum proxy → API communication
 
     class Config:
         env_file = ".env"

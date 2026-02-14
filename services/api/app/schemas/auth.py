@@ -9,12 +9,13 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     username: str = Field(min_length=3, max_length=30)
     password: str = Field(min_length=8, max_length=128)
+    referral_code: str | None = None
 
     @field_validator('username')
     @classmethod
     def validate_username(cls, v: str) -> str:
         if not USERNAME_PATTERN.match(v):
-            raise ValueError('Username must be 3-30 characters and contain only letters, numbers, hyphens and underscores')
+            raise ValueError('Username must be 3-30 characters long and can only contain letters, numbers, hyphens (-) and underscores (_).')
         return v
 
 

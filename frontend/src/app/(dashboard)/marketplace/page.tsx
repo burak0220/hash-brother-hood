@@ -5,7 +5,7 @@ import Card from '@/components/ui/card';
 import Input from '@/components/ui/input';
 import Select from '@/components/ui/select';
 import Button from '@/components/ui/button';
-import { rigsAPI, algorithmsAPI } from '@/lib/api';
+import { rigsAPI, algorithmsAPI, favoritesAPI } from '@/lib/api';
 import { formatUSDT, formatHashrate, statusBadgeColor } from '@/lib/utils';
 import type { Rig, Algorithm } from '@/types';
 
@@ -19,6 +19,7 @@ export default function MarketplacePage() {
   const [search, setSearch] = useState('');
   const [algorithmId, setAlgorithmId] = useState('');
   const [sortBy, setSortBy] = useState('created_at');
+  const [favIds, setFavIds] = useState<Set<number>>(new Set());
 
   const loadRigs = async () => {
     setLoading(true);
@@ -36,6 +37,7 @@ export default function MarketplacePage() {
 
   useEffect(() => {
     algorithmsAPI.list().then(({ data }) => setAlgorithms(data)).catch(() => {});
+    favoritesAPI.list().then(({ data }) => setFavIds(new Set(data.map(f => f.rig_id)))).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -131,7 +133,7 @@ export default function MarketplacePage() {
                     <div className="flex justify-between text-sm">
                       <span className="text-dark-400">Rating</span>
                       <span className="text-yellow-400 font-medium">
-                        {'★'.repeat(Math.round(Number(rig.average_rating)))}{'☆'.repeat(5 - Math.round(Number(rig.average_rating)))}
+                        {'★'.repeat(Math.min(5, Math.max(0, Math.round(Number(rig.average_rating) || 0))))}{'☆'.repeat(5 - Math.min(5, Math.max(0, Math.round(Number(rig.average_rating) || 0))))}
                         <span className="text-dark-400 ml-1">({rig.total_rentals})</span>
                       </span>
                     </div>
@@ -139,7 +141,28 @@ export default function MarketplacePage() {
 
                   <div className="flex items-center justify-between text-xs text-dark-500">
                     <span>{rig.region}</span>
-                    <span>{Number(rig.uptime_percentage)}% uptime</span>
+                    <div className="flex items-center gap-2">
+                      <span>{Number(rig.uptime_percentage)}% uptime</span>
+                      <button
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          try {
+                            if (favIds.has(rig.id)) {
+                              await favoritesAPI.remove(rig.id);
+                              setFavIds((prev) => { const n = new Set(prev); n.delete(rig.id); return n; });
+                            } else {
+                              await favoritesAPI.add(rig.id);
+                              setFavIds((prev) => new Set(prev).add(rig.id));
+                            }
+                          } catch {}
+                        }}
+                        className="text-base hover:scale-110 transition-transform"
+                        title={favIds.has(rig.id) ? 'Remove from favorites' : 'Add to favorites'}
+                      >
+                        {favIds.has(rig.id) ? '❤️' : '🤍'}
+                      </button>
+                    </div>
                   </div>
                 </Card>
               </Link>

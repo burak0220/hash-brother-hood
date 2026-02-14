@@ -2,14 +2,13 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useAuthStore } from '@/stores/auth';
 import Button from '@/components/ui/button';
 import Input from '@/components/ui/input';
 import toast from 'react-hot-toast';
+import { authAPI } from '@/lib/api';
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { register } = useAuthStore();
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -18,21 +17,45 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (password !== confirmPassword) {
-      toast.error('Passwords do not match');
+      toast.error('Passwords do not match. Please make sure both password fields are identical.');
       return;
     }
-    if (password.length < 6) {
-      toast.error('Password must be at least 6 characters');
+
+    if (password.length < 8) {
+      toast.error('Password must be at least 8 characters long for your account security.');
       return;
     }
+
     setLoading(true);
+
     try {
-      await register(email, username, password);
-      toast.success('Account created! Please sign in.');
-      router.push('/login');
+      const response = await authAPI.register({ email, username, password });
+      console.log('Registration success:', response);
+      toast.success('Your account has been created successfully. You can now sign in.');
+      setTimeout(() => router.push('/login'), 1000);
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Registration failed');
+      console.error('Registration error:', err);
+
+      // Handle different error formats
+      let errorMsg = 'Registration could not be completed. Please try again.';
+
+      if (err?.response?.data?.detail) {
+        const detail = err.response.data.detail;
+        // Check if detail is array of validation errors
+        if (Array.isArray(detail)) {
+          errorMsg = detail.map((e: any) => e.msg || e.message || JSON.stringify(e)).join(', ');
+        } else if (typeof detail === 'string') {
+          errorMsg = detail;
+        } else if (typeof detail === 'object') {
+          errorMsg = detail.msg || detail.message || JSON.stringify(detail);
+        }
+      } else if (err?.message) {
+        errorMsg = err.message;
+      }
+
+      toast.error(errorMsg);
     } finally {
       setLoading(false);
     }

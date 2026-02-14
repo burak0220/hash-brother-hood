@@ -21,7 +21,7 @@ class DepositRequest(BaseModel):
     @classmethod
     def validate_tx_hash(cls, v: str) -> str:
         if not BSC_TX_HASH_PATTERN.match(v):
-            raise ValueError('Invalid transaction hash (must be 0x + 64 hex characters)')
+            raise ValueError('Please enter a valid BSC transaction hash starting with 0x followed by 64 hexadecimal characters.')
         return v
 
 
@@ -33,7 +33,7 @@ class WithdrawRequest(BaseModel):
     @classmethod
     def validate_bsc_address(cls, v: str) -> str:
         if not BSC_ADDRESS_PATTERN.match(v):
-            raise ValueError('Invalid BSC wallet address (must be 0x + 40 hex characters)')
+            raise ValueError('Please enter a valid BSC wallet address starting with 0x followed by 40 hexadecimal characters.')
         return v
 
 

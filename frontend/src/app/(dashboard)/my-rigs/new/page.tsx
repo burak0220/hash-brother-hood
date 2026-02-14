@@ -6,6 +6,7 @@ import Button from '@/components/ui/button';
 import Input from '@/components/ui/input';
 import Select from '@/components/ui/select';
 import { rigsAPI, algorithmsAPI } from '@/lib/api';
+import { getUnitOptions, getUnitBaseType, convertHashrate } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import type { Algorithm } from '@/types';
 
@@ -32,6 +33,7 @@ export default function NewRigPage() {
   const [description, setDescription] = useState('');
   const [algorithmId, setAlgorithmId] = useState('');
   const [hashrate, setHashrate] = useState('');
+  const [selectedUnit, setSelectedUnit] = useState('');
   const [pricePerHour, setPricePerHour] = useState('');
   const [minHours, setMinHours] = useState('1');
   const [maxHours, setMaxHours] = useState('720');
@@ -40,9 +42,25 @@ export default function NewRigPage() {
   useEffect(() => {
     algorithmsAPI.list().then(({ data }) => {
       setAlgorithms(data);
-      if (data.length > 0) setAlgorithmId(data[0].id.toString());
+      if (data.length > 0) {
+        setAlgorithmId(data[0].id.toString());
+        setSelectedUnit(data[0].unit);
+      }
     }).catch(() => {});
   }, []);
+
+  // When algorithm changes, update the selected unit to algorithm's default
+  const handleAlgorithmChange = (newAlgoId: string) => {
+    setAlgorithmId(newAlgoId);
+    const algo = algorithms.find(a => a.id.toString() === newAlgoId);
+    if (algo) {
+      setSelectedUnit(algo.unit);
+    }
+  };
+
+  const selectedAlgo = algorithms.find((a) => a.id.toString() === algorithmId);
+  const algoBaseUnit = selectedAlgo?.unit || 'TH/s';
+  const unitOptions = getUnitOptions(algoBaseUnit);
 
   const handleCreateAlgorithm = async () => {
     if (!newAlgoName.trim()) return;
@@ -54,11 +72,12 @@ export default function NewRigPage() {
       });
       setAlgorithms((prev) => [...prev, newAlgo].sort((a, b) => a.display_name.localeCompare(b.display_name)));
       setAlgorithmId(newAlgo.id.toString());
+      setSelectedUnit(newAlgo.unit);
       setNewAlgoName('');
       setShowNewAlgo(false);
-      toast.success(`${newAlgo.display_name} algorithm added!`);
+      toast.success(`${newAlgo.display_name} has been added to the platform.`);
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Failed to create algorithm');
+      toast.error(err.response?.data?.detail || 'Unable to add the algorithm. Please try again.');
     }
     setCreatingAlgo(false);
   };
@@ -67,25 +86,32 @@ export default function NewRigPage() {
     e.preventDefault();
     setLoading(true);
     try {
+      // Convert hashrate from selected unit to algorithm's base unit
+      const inputValue = parseFloat(hashrate);
+      const convertedHashrate = convertHashrate(inputValue, selectedUnit, algoBaseUnit);
+
       await rigsAPI.create({
         name,
         description: description || null,
         algorithm_id: parseInt(algorithmId),
-        hashrate: parseFloat(hashrate),
+        hashrate: convertedHashrate,
         price_per_hour: parseFloat(pricePerHour),
         min_rental_hours: parseInt(minHours),
         max_rental_hours: parseInt(maxHours),
         region,
       });
-      toast.success('Rig created successfully!');
+      toast.success('Your rig has been listed on the marketplace.');
       router.push('/my-rigs');
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Failed to create rig');
+      toast.error(err.response?.data?.detail || 'Unable to create the rig listing. Please check your inputs and try again.');
     }
     setLoading(false);
   };
 
-  const selectedAlgo = algorithms.find((a) => a.id.toString() === algorithmId);
+  // Preview: show the converted value in the algorithm's base unit
+  const previewHashrate = hashrate
+    ? convertHashrate(parseFloat(hashrate) || 0, selectedUnit, algoBaseUnit)
+    : 0;
 
   return (
     <div className="max-w-2xl space-y-6 animate-fade-in">
@@ -158,20 +184,41 @@ export default function NewRigPage() {
               <Select
                 options={algorithms.map((a) => ({ value: a.id, label: `${a.display_name} (${a.unit})` }))}
                 value={algorithmId}
-                onChange={(e) => setAlgorithmId(e.target.value)}
+                onChange={(e) => handleAlgorithmChange(e.target.value)}
               />
             )}
           </div>
 
-          <Input
-            label={`Hashrate (${selectedAlgo?.unit || 'TH/s'})`}
-            type="number"
-            step="0.0001"
-            placeholder="e.g., 110"
-            value={hashrate}
-            onChange={(e) => setHashrate(e.target.value)}
-            required
-          />
+          {/* Hashrate + Unit Selector */}
+          <div>
+            <label className="block text-sm font-medium text-dark-300 mb-1">Hashrate</label>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <Input
+                  type="number"
+                  step="0.0001"
+                  min="0.0001"
+                  placeholder="e.g., 110"
+                  value={hashrate}
+                  onChange={(e) => setHashrate(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="w-44">
+                <Select
+                  options={unitOptions}
+                  value={selectedUnit}
+                  onChange={(e) => setSelectedUnit(e.target.value)}
+                />
+              </div>
+            </div>
+            {/* Preview: show conversion if unit differs from algo base */}
+            {hashrate && selectedUnit !== algoBaseUnit && previewHashrate > 0 && (
+              <p className="text-xs text-dark-500 mt-1">
+                = {previewHashrate.toLocaleString(undefined, { maximumFractionDigits: 4 })} {algoBaseUnit}
+              </p>
+            )}
+          </div>
 
           <Input
             label="Price per Hour (USDT)"

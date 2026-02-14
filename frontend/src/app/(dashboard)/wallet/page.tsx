@@ -21,9 +21,6 @@ export default function WalletPage() {
 
   const [showDeposit, setShowDeposit] = useState(false);
   const [showWithdraw, setShowWithdraw] = useState(false);
-  const [depositTab, setDepositTab] = useState('manual');
-  const [depositAmount, setDepositAmount] = useState('');
-  const [depositTxHash, setDepositTxHash] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [withdrawAddress, setWithdrawAddress] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -33,7 +30,6 @@ export default function WalletPage() {
   const [walletConnected, setWalletConnected] = useState(false);
   const [connectedAddress, setConnectedAddress] = useState('');
   const [metamaskAmount, setMetamaskAmount] = useState('');
-  const [platformAddress, setPlatformAddress] = useState('');
 
   const loadTransactions = async () => {
     try {
@@ -44,37 +40,15 @@ export default function WalletPage() {
     setLoading(false);
   };
 
-  const loadPlatformAddress = async () => {
-    try {
-      const { data } = await paymentsAPI.platformAddress();
-      setPlatformAddress(data.address);
-    } catch {}
-  };
-
   useEffect(() => {
     loadTransactions();
-    loadPlatformAddress();
   }, [page]);
 
-  const handleDeposit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
-    try {
-      const { data: tx } = await paymentsAPI.deposit({ amount: parseFloat(depositAmount), tx_hash: depositTxHash });
-      if (tx.status === 'pending') {
-        toast.success('Deposit submitted - awaiting BSC confirmation. You can verify it from your transaction history.');
-      } else {
-        toast.success('Deposit verified and credited successfully!');
-      }
-      setShowDeposit(false);
-      setDepositAmount('');
-      setDepositTxHash('');
-      await fetchUser();
-      await loadTransactions();
-    } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Deposit failed');
+  const copyAddress = () => {
+    if (user?.deposit_address) {
+      navigator.clipboard.writeText(user.deposit_address);
+      toast.success('Deposit address copied to clipboard.');
     }
-    setSubmitting(false);
   };
 
   const handleConnectWallet = async () => {
@@ -82,38 +56,31 @@ export default function WalletPage() {
       const address = await connectWallet();
       setConnectedAddress(address);
       setWalletConnected(true);
-      toast.success('Wallet connected');
+      toast.success('MetaMask wallet connected successfully.');
     } catch (err: any) {
-      toast.error(err.message || 'Failed to connect wallet');
+      toast.error(err.message || 'Unable to connect your wallet. Please make sure MetaMask is unlocked.');
     }
   };
 
   const handleMetaMaskDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!platformAddress) {
-      toast.error('Platform address not loaded');
+    if (!user?.deposit_address) {
+      toast.error('Your deposit address has not been generated yet. Please contact support.');
       return;
     }
     setSubmitting(true);
     try {
-      const txHash = await transferUSDT(platformAddress, metamaskAmount);
-      // Small delay to let BSC confirm
-      toast.loading('Transaction sent, verifying on BSC...', { id: 'metamask-verify' });
-      await new Promise((r) => setTimeout(r, 5000));
-      const { data: tx } = await paymentsAPI.deposit({ amount: parseFloat(metamaskAmount), tx_hash: txHash });
-      toast.dismiss('metamask-verify');
-      if (tx.status === 'completed') {
-        toast.success('USDT deposit verified and credited!');
-      } else {
-        toast.success('Deposit submitted - awaiting BSC confirmation.');
-      }
+      const txHash = await transferUSDT(user.deposit_address, metamaskAmount);
+      toast.success('Transaction sent successfully. Your deposit will be credited automatically within 30 seconds.');
       setShowDeposit(false);
       setMetamaskAmount('');
-      await fetchUser();
-      await loadTransactions();
+      // Refresh balance after a short delay
+      setTimeout(async () => {
+        await fetchUser();
+        await loadTransactions();
+      }, 5000);
     } catch (err: any) {
-      toast.dismiss('metamask-verify');
-      toast.error(err.reason || err.message || 'MetaMask transfer failed');
+      toast.error(err.reason || err.message || 'The MetaMask transfer could not be completed. Please try again.');
     }
     setSubmitting(false);
   };
@@ -122,11 +89,11 @@ export default function WalletPage() {
     setVerifyingId(txId);
     try {
       await paymentsAPI.verifyDeposit(txId);
-      toast.success('Deposit verified and credited!');
+      toast.success('Deposit verified and credited to your account.');
       await fetchUser();
       await loadTransactions();
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Verification failed - try again later');
+      toast.error(err.response?.data?.detail || 'Deposit verification failed. The transaction may still be processing on the blockchain.');
     }
     setVerifyingId(null);
   };
@@ -136,20 +103,20 @@ export default function WalletPage() {
     setSubmitting(true);
     try {
       await paymentsAPI.withdraw({ amount: parseFloat(withdrawAmount), wallet_address: withdrawAddress });
-      toast.success('Withdrawal submitted for approval');
+      toast.success('Your withdrawal request has been submitted and is pending admin approval.');
       setShowWithdraw(false);
       setWithdrawAmount('');
       setWithdrawAddress('');
       await fetchUser();
       await loadTransactions();
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Withdrawal failed');
+      toast.error(err.response?.data?.detail || 'Unable to process your withdrawal. Please check your balance and try again.');
     }
     setSubmitting(false);
   };
 
   const withdrawFee = 1;
-  const withdrawTotal = withdrawAmount ? parseFloat(withdrawAmount) + withdrawFee : 0;
+  const withdrawTotal = withdrawAmount ? Math.max(0, parseFloat(withdrawAmount) || 0) + withdrawFee : 0;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -189,9 +156,9 @@ export default function WalletPage() {
           <div className="text-sm text-dark-300">
             <p className="font-medium text-white mb-1">How it works</p>
             <ul className="space-y-1 text-dark-400">
-              <li><strong className="text-dark-300">Deposits:</strong> Send USDT (BEP-20) to the platform address. Your transaction is automatically verified on the BSC blockchain.</li>
-              <li><strong className="text-dark-300">Withdrawals:</strong> Submit a withdrawal request. After admin approval, USDT is automatically sent to your BSC wallet.</li>
-              <li><strong className="text-dark-300">Network:</strong> All transactions use BSC (Binance Smart Chain) for low fees and fast confirmations (~3 seconds).</li>
+              <li><strong className="text-dark-300">Deposits:</strong> Send USDT (BEP-20) to your unique deposit address. Your balance is credited automatically within 30 seconds.</li>
+              <li><strong className="text-dark-300">Withdrawals:</strong> Submit a withdrawal request with 1 USDT network fee. After admin approval, USDT is sent to your BSC wallet.</li>
+              <li><strong className="text-dark-300">Network:</strong> All transactions use BSC (Binance Smart Chain) for low fees and fast confirmations.</li>
             </ul>
           </div>
         </div>
@@ -200,7 +167,26 @@ export default function WalletPage() {
       {/* Transactions */}
       <Card>
         <CardHeader>
-          <CardTitle>Transaction History</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>Transaction History</CardTitle>
+            <button
+              onClick={async () => {
+                try {
+                  const { default: api } = await import('@/lib/api');
+                  const res = await api.get('/payments/transactions/export', { responseType: 'blob' });
+                  const url = window.URL.createObjectURL(new Blob([res.data]));
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'transactions.csv';
+                  a.click();
+                  window.URL.revokeObjectURL(url);
+                } catch { toast.error('Unable to export transactions. Please try again.'); }
+              }}
+              className="text-xs text-primary-400 hover:text-primary-300 transition-colors"
+            >
+              Export CSV
+            </button>
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -277,98 +263,91 @@ export default function WalletPage() {
 
       {/* Deposit Modal */}
       <Modal isOpen={showDeposit} onClose={() => setShowDeposit(false)} title="Deposit USDT (BEP-20)">
-        <Tabs
-          tabs={[
-            { id: 'manual', label: 'Manual Transfer' },
-            { id: 'metamask', label: 'MetaMask' },
-          ]}
-          activeTab={depositTab}
-          onChange={setDepositTab}
-        />
-
-        {depositTab === 'manual' ? (
-          <form onSubmit={handleDeposit} className="space-y-4 mt-4">
-            {platformAddress && platformAddress !== '0x0000000000000000000000000000000000000000' ? (
-              <div className="bg-dark-800 rounded-lg p-4">
-                <p className="text-xs text-dark-400 mb-1">Send USDT (BEP-20) to this address:</p>
-                <p className="text-sm font-mono text-primary-400 break-all select-all">{platformAddress}</p>
-                <div className="flex items-center gap-3 mt-2">
+        <div className="space-y-4">
+          {user?.deposit_address ? (
+            <>
+              {/* Your Unique Deposit Address */}
+              <div className="bg-gradient-to-r from-primary-900/30 to-accent-900/30 border border-primary-500/20 rounded-lg p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <svg className="w-4 h-4 text-primary-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                  <p className="text-xs text-primary-400 font-medium">Your Unique Deposit Address</p>
+                </div>
+                <div className="bg-dark-900/60 rounded-lg p-3">
+                  <p className="text-sm font-mono text-white break-all select-all">{user.deposit_address}</p>
+                </div>
+                <div className="flex items-center gap-3 mt-3">
                   <button
                     type="button"
-                    className="text-xs text-dark-500 hover:text-primary-400 transition-colors"
-                    onClick={() => { navigator.clipboard.writeText(platformAddress); toast.success('Address copied'); }}
+                    className="text-xs text-primary-400 hover:text-primary-300 transition-colors font-medium"
+                    onClick={copyAddress}
                   >
-                    Copy Address
+                    📋 Copy Address
                   </button>
                   <a
-                    href={`https://bscscan.com/address/${platformAddress}`}
+                    href={`https://bscscan.com/address/${user.deposit_address}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs text-dark-500 hover:text-primary-400 transition-colors"
+                    className="text-xs text-primary-400 hover:text-primary-300 transition-colors font-medium"
                   >
-                    View on BSCScan
+                    🔍 View on BSCScan
                   </a>
                 </div>
               </div>
-            ) : (
-              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3">
-                <p className="text-xs text-yellow-400">Platform wallet not configured yet. Contact admin.</p>
+
+              {/* Instructions */}
+              <div className="bg-dark-800/50 rounded-lg p-4 space-y-2">
+                <p className="text-sm text-white font-medium">📤 How to Deposit:</p>
+                <ol className="space-y-1 text-xs text-dark-300 list-decimal list-inside">
+                  <li>Copy your unique deposit address above</li>
+                  <li>Send USDT (BEP-20) from any BSC wallet or exchange</li>
+                  <li>Your balance will be credited automatically within 30 seconds</li>
+                  <li>No need to enter transaction hash - it's detected automatically!</li>
+                </ol>
               </div>
-            )}
-            <Input label="Amount (USDT)" type="number" step="0.01" min="1" placeholder="10.00" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value)} required />
-            <Input label="Transaction Hash" placeholder="0x..." value={depositTxHash} onChange={(e) => setDepositTxHash(e.target.value)} required />
-            <div className="bg-dark-800/50 rounded-lg p-3 space-y-1">
-              <p className="text-xs text-dark-400">
-                <strong className="text-dark-300">Auto-verified:</strong> Your transaction hash will be verified on the BSC blockchain automatically.
-              </p>
-              <p className="text-xs text-dark-500">
-                If BSC hasn&apos;t confirmed your transaction yet, it will be marked as pending and you can verify it later.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="secondary" type="button" onClick={() => setShowDeposit(false)} className="flex-1">Cancel</Button>
-              <Button type="submit" className="flex-1" loading={submitting}>Confirm Deposit</Button>
-            </div>
-          </form>
-        ) : (
-          <div className="space-y-4 mt-4">
-            {!walletConnected ? (
-              <div className="text-center py-4">
-                {isMetaMaskInstalled() ? (
-                  <>
-                    <p className="text-sm text-dark-400 mb-4">Connect your MetaMask wallet to deposit USDT directly on BSC.</p>
-                    <Button onClick={handleConnectWallet}>Connect MetaMask</Button>
-                  </>
-                ) : (
-                  <div>
-                    <p className="text-sm text-dark-400 mb-2">MetaMask is not installed.</p>
-                    <a
-                      href="https://metamask.io/download/"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary-400 text-sm hover:underline"
-                    >
-                      Install MetaMask
-                    </a>
+
+              {/* MetaMask Quick Send */}
+              <div className="border-t border-dark-700 pt-4">
+                <p className="text-xs text-dark-400 mb-3">Or send directly from MetaMask:</p>
+                {!walletConnected ? (
+                  <div className="text-center py-2">
+                    {isMetaMaskInstalled() ? (
+                      <Button onClick={handleConnectWallet} variant="secondary" className="w-full">Connect MetaMask</Button>
+                    ) : (
+                      <div>
+                        <p className="text-xs text-dark-400 mb-2">MetaMask not installed</p>
+                        <a
+                          href="https://metamask.io/download/"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary-400 text-xs hover:underline"
+                        >
+                          Install MetaMask
+                        </a>
+                      </div>
+                    )}
                   </div>
+                ) : (
+                  <form onSubmit={handleMetaMaskDeposit} className="space-y-3">
+                    <div className="bg-dark-800 rounded-lg p-2">
+                      <p className="text-[10px] text-dark-500">Connected:</p>
+                      <p className="text-xs font-mono text-primary-400">{truncateAddress(connectedAddress, 8)}</p>
+                    </div>
+                    <Input label="Amount (USDT)" type="number" step="0.01" min="1" placeholder="10.00" value={metamaskAmount} onChange={(e) => setMetamaskAmount(e.target.value)} required />
+                    <Button type="submit" className="w-full" loading={submitting}>Send USDT</Button>
+                  </form>
                 )}
               </div>
-            ) : (
-              <form onSubmit={handleMetaMaskDeposit} className="space-y-4">
-                <div className="bg-dark-800 rounded-lg p-3">
-                  <p className="text-xs text-dark-400">Connected Wallet</p>
-                  <p className="text-sm font-mono text-primary-400">{truncateAddress(connectedAddress, 8)}</p>
-                </div>
-                <Input label="Amount (USDT)" type="number" step="0.01" min="1" placeholder="10.00" value={metamaskAmount} onChange={(e) => setMetamaskAmount(e.target.value)} required />
-                <p className="text-xs text-dark-500">USDT will be transferred from your wallet on BSC network and auto-verified on the blockchain.</p>
-                <div className="flex gap-2">
-                  <Button variant="secondary" type="button" onClick={() => setShowDeposit(false)} className="flex-1">Cancel</Button>
-                  <Button type="submit" className="flex-1" loading={submitting}>Send USDT</Button>
-                </div>
-              </form>
-            )}
-          </div>
-        )}
+            </>
+          ) : (
+            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
+              <p className="text-sm text-yellow-400">Deposit address not generated yet. Please contact support.</p>
+            </div>
+          )}
+
+          <Button variant="secondary" type="button" onClick={() => setShowDeposit(false)} className="w-full">Close</Button>
+        </div>
       </Modal>
 
       {/* Withdraw Modal */}

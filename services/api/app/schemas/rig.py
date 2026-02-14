@@ -13,7 +13,7 @@ class RigCreate(BaseModel):
     algorithm_id: int
     hashrate: Decimal = Field(gt=0)
     price_per_hour: Decimal = Field(gt=0)
-    min_rental_hours: int = Field(default=1, ge=1)
+    min_rental_hours: int = Field(default=2, ge=1)
     max_rental_hours: int = Field(default=720, ge=1, le=8760)
     region: str = "auto"
     stratum_host: str | None = None

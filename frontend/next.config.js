@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+const API_INTERNAL_URL = process.env.API_INTERNAL_URL || 'http://localhost:8000';
+
 const nextConfig = {
   output: 'standalone',
   images: {
@@ -8,7 +10,7 @@ const nextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: 'http://localhost:8000/api/:path*',
+        destination: `${API_INTERNAL_URL}/api/:path*`,
       },
     ];
   },

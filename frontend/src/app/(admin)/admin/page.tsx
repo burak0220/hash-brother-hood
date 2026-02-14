@@ -362,7 +362,7 @@ export default function AdminPage() {
                     <td className="px-3 py-3 text-sm text-dark-300">User #{r.renter_id}</td>
                     <td className="px-3 py-3 text-sm text-white">{r.duration_hours}h</td>
                     <td className="px-3 py-3 text-sm text-accent-400">{formatUSDT(r.total_cost)}</td>
-                    <td className="px-3 py-3 text-sm text-dark-400">{formatUSDT(r.platform_fee)}</td>
+                    <td className="px-3 py-3 text-sm text-dark-400">{formatUSDT(r.total_cost * 0.03)}</td>
                     <td className="px-3 py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${statusBadgeColor(r.status)}`}>{r.status}</span></td>
                     <td className="px-3 py-3 text-xs text-dark-400">{r.created_at ? formatDateTime(r.created_at) : '-'}</td>
                     <td className="px-3 py-3">

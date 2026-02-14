@@ -16,9 +16,14 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# BSC Mainnet USDT (Tether) BEP-20 contract
-USDT_CONTRACT_ADDRESS = "0x55d398326f99059fF775485246999027B3197955"
+# BSC USDT (Tether) BEP-20 contract addresses
+USDT_MAINNET = "0x55d398326f99059fF775485246999027B3197955"
+USDT_TESTNET = "0x337610d27c682E347C9cD60BD4b3b107C9d34dDd"  # BSC Testnet USDT
 USDT_DECIMALS = 18
+
+# Select contract based on network config
+USDT_CONTRACT_ADDRESS = USDT_MAINNET if settings.BSC_NETWORK == "mainnet" else USDT_TESTNET
+BSC_CHAIN_ID = 56 if settings.BSC_NETWORK == "mainnet" else 97
 
 # ERC-20 ABI (minimal: transfer, balanceOf)
 USDT_ABI = [
@@ -164,7 +169,7 @@ def _send_usdt_sync(to_address: str, amount: Decimal) -> dict:
             "nonce": nonce,
             "gas": 100000,
             "gasPrice": w3.eth.gas_price,
-            "chainId": 56,
+            "chainId": BSC_CHAIN_ID,
         })
 
         # Sign and send

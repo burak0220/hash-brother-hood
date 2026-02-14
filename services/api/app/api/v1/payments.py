@@ -1,6 +1,9 @@
+import csv
+import io
 import math
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from slowapi import Limiter
@@ -36,7 +39,7 @@ async def get_platform_address(
     )
     setting = result.scalar_one_or_none()
     if not setting:
-        raise HTTPException(status_code=404, detail="Platform wallet address not configured")
+        raise HTTPException(status_code=404, detail="The platform deposit address is not available at this time. Please contact support.")
     return {"address": setting.value}
 
 
@@ -98,3 +101,28 @@ async def get_transactions(
         "per_page": per_page,
         "pages": math.ceil(total / per_page) if total > 0 else 1,
     }
+
+
+@router.get("/transactions/export")
+async def export_transactions(
+    type: str | None = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Export all transactions as CSV."""
+    txs, _ = await list_transactions(db, user.id, page=1, per_page=10000, tx_type=type)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "Type", "Amount", "Fee", "Status", "TX Hash", "Wallet", "Description", "Date"])
+    for tx in txs:
+        writer.writerow([
+            tx.id, tx.type, float(tx.amount), float(tx.fee), tx.status,
+            tx.tx_hash or "", tx.wallet_address or "", tx.description or "",
+            tx.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+        ])
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=transactions.csv"},
+    )

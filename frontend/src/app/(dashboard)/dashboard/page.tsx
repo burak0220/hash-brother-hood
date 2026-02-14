@@ -4,41 +4,34 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import Card, { CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { useAuthStore } from '@/stores/auth';
-import { rentalsAPI, rigsAPI, paymentsAPI } from '@/lib/api';
+import { rentalsAPI, rigsAPI, paymentsAPI, usersAPI } from '@/lib/api';
 import { formatUSDT, statusBadgeColor, formatDateTime } from '@/lib/utils';
 import type { Rental, Rig, Transaction } from '@/types';
 
 const HashrateChart = dynamic(() => import('@/components/charts/hashrate-chart'), { ssr: false });
 const EarningsChart = dynamic(() => import('@/components/charts/earnings-chart'), { ssr: false });
 
-const mockHashrateData = Array.from({ length: 24 }, (_, i) => ({
-  time: `${i}:00`,
-  hashrate: Math.random() * 100 + 50,
-}));
-
-const mockEarningsData = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => ({
-  date: d,
-  earnings: Math.random() * 0.01,
-}));
-
 export default function DashboardPage() {
   const { user } = useAuthStore();
   const [rentals, setRentals] = useState<Rental[]>([]);
   const [rigs, setRigs] = useState<Rig[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [earningsData, setEarningsData] = useState<{ date: string; earnings: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       try {
-        const [rentalRes, rigRes, txRes] = await Promise.all([
+        const [rentalRes, rigRes, txRes, earningsRes] = await Promise.all([
           rentalsAPI.list({ role: 'renter', per_page: 5 }),
           rigsAPI.myRigs(),
           paymentsAPI.transactions({ per_page: 5 }),
+          usersAPI.earnings().catch(() => ({ data: [] })),
         ]);
         setRentals(rentalRes.data.items);
         setRigs(rigRes.data);
         setTransactions(txRes.data.items);
+        setEarningsData(earningsRes.data);
       } catch {}
       setLoading(false);
     }
@@ -166,7 +159,11 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <HashrateChart data={mockHashrateData} />
+            {activeRentals > 0 ? (
+              <HashrateChart data={Array.from({ length: 24 }, (_, i) => ({ time: `${i}:00`, hashrate: 0 }))} />
+            ) : (
+              <div className="flex items-center justify-center h-[200px] text-dark-500 text-sm">No active rentals</div>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -182,7 +179,7 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <EarningsChart data={mockEarningsData} />
+            <EarningsChart data={earningsData} />
           </CardContent>
         </Card>
       </div>

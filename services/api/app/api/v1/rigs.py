@@ -105,7 +105,7 @@ async def create(
 async def get_rig_detail(rig_id: int, db: AsyncSession = Depends(get_db)):
     rig = await get_rig(db, rig_id)
     if not rig:
-        raise HTTPException(status_code=404, detail="Rig not found")
+        raise HTTPException(status_code=404, detail="The requested rig could not be found. It may have been removed from the platform.")
     return _rig_to_response(rig)
 
 
@@ -118,9 +118,9 @@ async def update_rig_route(
 ):
     rig = await get_rig(db, rig_id)
     if not rig:
-        raise HTTPException(status_code=404, detail="Rig not found")
+        raise HTTPException(status_code=404, detail="The requested rig could not be found. It may have been removed from the platform.")
     if rig.owner_id != user.id and user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized")
+        raise HTTPException(status_code=403, detail="You do not have permission to modify this rig.")
     updated = await update_rig(db, rig, **data.model_dump(exclude_unset=True))
     full_rig = await get_rig(db, updated.id)
     return _rig_to_response(full_rig)
@@ -134,8 +134,8 @@ async def delete_rig_route(
 ):
     rig = await get_rig(db, rig_id)
     if not rig:
-        raise HTTPException(status_code=404, detail="Rig not found")
+        raise HTTPException(status_code=404, detail="The requested rig could not be found. It may have been removed from the platform.")
     if rig.owner_id != user.id and user.role != "admin":
-        raise HTTPException(status_code=403, detail="Not authorized")
+        raise HTTPException(status_code=403, detail="You do not have permission to modify this rig.")
     await delete_rig(db, rig)
     return {"message": "Rig deleted"}

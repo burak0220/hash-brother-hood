@@ -5,7 +5,7 @@ import Card, { CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import Button from '@/components/ui/button';
 import Input from '@/components/ui/input';
 import Badge from '@/components/ui/badge';
-import { rigsAPI, rentalsAPI, reviewsAPI } from '@/lib/api';
+import { rigsAPI, rentalsAPI, reviewsAPI, messagesAPI } from '@/lib/api';
 import { formatUSDT, formatHashrate, statusBadgeColor, formatDate, formatDateTime } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth';
 import toast from 'react-hot-toast';
@@ -22,11 +22,18 @@ export default function RigDetailPage() {
 
   // Rent form
   const [showRent, setShowRent] = useState(false);
-  const [duration, setDuration] = useState('24');
+  const [duration, setDuration] = useState('2');
   const [poolUrl, setPoolUrl] = useState('');
   const [poolUser, setPoolUser] = useState('');
   const [poolPassword, setPoolPassword] = useState('x');
   const [renting, setRenting] = useState(false);
+
+  const poolPresets: Record<string, { url: string; note: string }> = {
+    'NiceHash': { url: 'stratum+tcp://sha256.auto.nicehash.com:9200', note: 'Use your NiceHash BTC address as worker' },
+    'F2Pool': { url: 'stratum+tcp://btc.f2pool.com:3333', note: 'Use account.worker as pool user' },
+    'Antpool': { url: 'stratum+tcp://stratum.antpool.com:3333', note: 'Use your Antpool sub-account' },
+    'ViaBTC': { url: 'stratum+tcp://btc.viabtc.com:3333', note: 'Use account.worker as pool user' },
+  };
 
   useEffect(() => {
     async function load() {
@@ -38,7 +45,7 @@ export default function RigDetailPage() {
         setRig(rigRes.data);
         setReviews(reviewRes.data);
       } catch {
-        toast.error('Failed to load rig');
+        toast.error('Unable to load rig details. Please try again.');
       }
       setLoading(false);
     }
@@ -56,10 +63,10 @@ export default function RigDetailPage() {
         pool_user: poolUser,
         pool_password: poolPassword,
       });
-      toast.success('Rental created successfully!');
+      toast.success('Rental started successfully! Redirecting to your rentals.');
       router.push('/rentals');
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Failed to create rental');
+      toast.error(err.response?.data?.detail || 'Unable to create the rental. Please check your balance and try again.');
     }
     setRenting(false);
   };
@@ -80,7 +87,8 @@ export default function RigDetailPage() {
     );
   }
 
-  const totalCost = Number(rig.price_per_hour) * parseInt(duration || '0');
+  const parsedDuration = Math.max(0, parseInt(duration || '0'));
+  const totalCost = Number(rig.price_per_hour) * parsedDuration;
   const isOwner = user?.id === rig.owner_id;
 
   return (
@@ -166,6 +174,8 @@ export default function RigDetailPage() {
             <CardContent>
               {isOwner ? (
                 <p className="text-dark-400 text-sm">This is your rig.</p>
+              ) : !user ? (
+                <p className="text-dark-400 text-sm">Please login to rent this rig.</p>
               ) : rig.status !== 'active' ? (
                 <p className="text-dark-400 text-sm">This rig is currently unavailable.</p>
               ) : !showRent ? (
@@ -183,6 +193,22 @@ export default function RigDetailPage() {
                   <Button className="w-full" onClick={() => setShowRent(true)}>
                     Rent Now
                   </Button>
+                  {rig.owner_id && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          await messagesAPI.send({ receiver_id: rig.owner_id, content: `Hi, I'm interested in renting your rig "${rig.name}".` });
+                          toast.success('Your message has been sent to the rig owner.');
+                          router.push('/messages');
+                        } catch {
+                          toast.error('Unable to send the message. Please try again.');
+                        }
+                      }}
+                      className="w-full mt-2 px-4 py-2.5 border border-dark-600/50 text-dark-300 text-sm rounded-xl hover:bg-dark-800/60 transition-all"
+                    >
+                      Message Owner
+                    </button>
+                  )}
                 </div>
               ) : (
                 <form onSubmit={handleRent} className="space-y-4">
@@ -195,6 +221,25 @@ export default function RigDetailPage() {
                     max={rig.max_rental_hours}
                     required
                   />
+                  <div>
+                    <label className="block text-xs text-dark-400 mb-1">Pool Preset</label>
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {Object.entries(poolPresets).map(([name, preset]) => (
+                        <button
+                          key={name}
+                          type="button"
+                          onClick={() => setPoolUrl(preset.url)}
+                          className={`px-2 py-1 text-xs rounded border transition-all ${
+                            poolUrl === preset.url
+                              ? 'border-primary-400/40 bg-primary-400/10 text-primary-400'
+                              : 'border-dark-600/50 text-dark-400 hover:border-dark-500'
+                          }`}
+                        >
+                          {name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <Input
                     label="Pool URL"
                     placeholder="stratum+tcp://pool:port"

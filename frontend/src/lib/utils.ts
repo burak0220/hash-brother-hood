@@ -6,12 +6,88 @@ export function cn(...inputs: ClassValue[]) {
 
 export function formatUSDT(amount: number | string): string {
   const num = typeof amount === 'string' ? parseFloat(amount) : amount;
-  return num.toFixed(2);
+  return Math.max(0, isNaN(num) ? 0 : num).toFixed(2);
+}
+
+// Hashrate unit prefixes and multipliers
+const HASH_PREFIXES = [
+  { prefix: '', multiplier: 1 },
+  { prefix: 'K', multiplier: 1e3 },
+  { prefix: 'M', multiplier: 1e6 },
+  { prefix: 'G', multiplier: 1e9 },
+  { prefix: 'T', multiplier: 1e12 },
+  { prefix: 'P', multiplier: 1e15 },
+  { prefix: 'E', multiplier: 1e18 },
+];
+
+// Extract base type from unit (e.g., "TH/s" → "H/s", "KSol/s" → "Sol/s")
+export function getUnitBaseType(unit: string): string {
+  for (const { prefix } of [...HASH_PREFIXES].reverse()) {
+    if (prefix && unit.startsWith(prefix)) {
+      return unit.slice(prefix.length);
+    }
+  }
+  return unit;
+}
+
+// Get prefix multiplier (e.g., "TH/s" → 1e12, "KH/s" → 1e3, "H/s" → 1)
+export function getUnitMultiplier(unit: string): number {
+  for (const { prefix, multiplier } of [...HASH_PREFIXES].reverse()) {
+    if (prefix && unit.startsWith(prefix)) {
+      return multiplier;
+    }
+  }
+  return 1;
+}
+
+// Get available unit options for a given base type
+export function getUnitOptions(baseUnit: string): { value: string; label: string }[] {
+  const baseType = getUnitBaseType(baseUnit);
+  return HASH_PREFIXES.map(({ prefix }) => {
+    const unit = `${prefix}${baseType}`;
+    const labels: Record<string, string> = {
+      '': '', 'K': 'Kilo', 'M': 'Mega', 'G': 'Giga', 'T': 'Tera', 'P': 'Peta', 'E': 'Exa',
+    };
+    return {
+      value: unit,
+      label: `${unit} (${labels[prefix] || ''}${baseType.replace('/', ' per ')})`.replace('( ', '('),
+    };
+  });
+}
+
+// Convert value from one unit to another (same base type)
+export function convertHashrate(value: number, fromUnit: string, toUnit: string): number {
+  const fromMul = getUnitMultiplier(fromUnit);
+  const toMul = getUnitMultiplier(toUnit);
+  return value * (fromMul / toMul);
 }
 
 export function formatHashrate(hashrate: number | string, unit: string = 'TH/s'): string {
-  const num = typeof hashrate === 'string' ? parseFloat(hashrate) : hashrate;
-  return `${num.toLocaleString()} ${unit}`;
+  let num = typeof hashrate === 'string' ? parseFloat(hashrate) : hashrate;
+  num = Math.max(0, isNaN(num) ? 0 : num);
+
+  // Auto-scale: find the best unit for display
+  const baseType = getUnitBaseType(unit);
+  const absValue = num * getUnitMultiplier(unit); // convert to base
+
+  let bestPrefix = '';
+  let bestValue = absValue;
+  for (const { prefix, multiplier } of HASH_PREFIXES) {
+    const scaled = absValue / multiplier;
+    if (scaled >= 1 || multiplier === 1) {
+      bestPrefix = prefix;
+      bestValue = scaled;
+    }
+  }
+
+  const displayUnit = `${bestPrefix}${baseType}`;
+  const formatted = bestValue >= 1000
+    ? bestValue.toLocaleString(undefined, { maximumFractionDigits: 2 })
+    : bestValue % 1 === 0
+      ? bestValue.toString()
+      : bestValue.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+
+  return `${formatted} ${displayUnit}`;
 }
 
 export function formatDate(date: string): string {

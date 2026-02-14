@@ -10,6 +10,8 @@ export interface User {
   avatar_url: string | null;
   bio: string | null;
   bsc_wallet_address: string | null;
+  deposit_address: string | null;
+  referral_code: string | null;
   created_at: string;
 }
 
@@ -145,6 +147,45 @@ export interface UserPublic {
   avatar_url: string | null;
   bio: string | null;
   created_at: string;
+}
+
+export interface MessageItem {
+  id: number;
+  sender_id: number;
+  receiver_id: number;
+  content: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface Conversation {
+  user_id: number;
+  username: string;
+  avatar_url: string | null;
+  last_message: string;
+  last_message_at: string;
+  unread_count: number;
+}
+
+export interface DisputeMessage {
+  id: number;
+  sender_id: number;
+  sender_username: string | null;
+  content: string;
+  created_at: string;
+}
+
+export interface Dispute {
+  id: number;
+  rental_id: number;
+  opened_by: number;
+  opener_username: string | null;
+  reason: string;
+  status: string;
+  resolution: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  messages: DisputeMessage[];
 }
 
 export interface TokenResponse {

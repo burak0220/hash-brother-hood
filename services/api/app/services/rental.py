@@ -21,13 +21,13 @@ async def create_rental(
     )
     rig = result.scalar_one_or_none()
     if not rig:
-        raise ValueError("Rig not found")
+        raise ValueError("The requested mining rig could not be found. It may have been removed.")
     if rig.status != "active":
-        raise ValueError("Rig is not available")
+        raise ValueError("This rig is currently unavailable for rental. It may already be rented or under maintenance.")
     if rig.owner_id == renter.id:
-        raise ValueError("Cannot rent your own rig")
+        raise ValueError("You cannot rent your own rig. Please select a different one from the marketplace.")
     if duration_hours < rig.min_rental_hours or duration_hours > rig.max_rental_hours:
-        raise ValueError(f"Duration must be between {rig.min_rental_hours} and {rig.max_rental_hours} hours")
+        raise ValueError(f"Rental duration must be between {rig.min_rental_hours} and {rig.max_rental_hours} hours for this rig.")
 
     total_cost = rig.price_per_hour * Decimal(str(duration_hours))
 
@@ -38,7 +38,7 @@ async def create_rental(
     renter = locked_renter.scalar_one()
 
     if renter.balance < total_cost:
-        raise ValueError("Insufficient balance")
+        raise ValueError("Insufficient balance to complete this rental. Please deposit funds to your wallet.")
 
     renter.balance -= total_cost
 
@@ -108,33 +108,53 @@ async def get_rental(db: AsyncSession, rental_id: int) -> Rental | None:
 
 async def cancel_rental(db: AsyncSession, rental: Rental, user: User) -> Rental:
     if rental.status not in ("pending", "active"):
-        raise ValueError("Rental cannot be cancelled")
+        raise ValueError("This rental cannot be cancelled in its current state.")
 
+    now = datetime.now(timezone.utc)
+    original_status = rental.status  # Save original status before changing it
+
+    # Calculate refund amount (partial for active rentals)
+    if original_status == "active" and rental.started_at and rental.ends_at:
+        total_seconds = (rental.ends_at - rental.started_at).total_seconds()
+        used_seconds = max((now - rental.started_at).total_seconds(), 0)
+        unused_ratio = max(Decimal(str(1 - used_seconds / total_seconds)), Decimal("0"))
+        refund_amount = (rental.total_cost * unused_ratio).quantize(Decimal("0.01"))
+    else:
+        # Pending rental = full refund
+        refund_amount = rental.total_cost
+
+    # Update status after refund calculation
     rental.status = "cancelled"
-    rental.cancelled_at = datetime.now(timezone.utc)
+    rental.cancelled_at = now
+
+    fee_percent = Decimal(str(settings.PLATFORM_FEE_PERCENT)) / Decimal("100")
 
     # Refund renter
     renter_result = await db.execute(select(User).where(User.id == rental.renter_id))
     renter = renter_result.scalar_one()
-    renter.balance += rental.total_cost
+    renter.balance += refund_amount
 
     tx = Transaction(
-        user_id=renter.id, type="refund", amount=rental.total_cost,
+        user_id=renter.id, type="refund", amount=refund_amount,
         status="completed", description=f"Refund for cancelled rental #{rental.id}",
     )
     db.add(tx)
 
-    # Deduct owner earning (reverse the payment)
-    fee_percent = Decimal(str(settings.PLATFORM_FEE_PERCENT)) / Decimal("100")
-    platform_fee = rental.total_cost * fee_percent
-    owner_earning = rental.total_cost - platform_fee
+    # Deduct owner earning proportionally
+    platform_fee = refund_amount * fee_percent
+    owner_refund = refund_amount - platform_fee
 
     owner_result = await db.execute(select(User).where(User.id == rental.owner_id))
     owner = owner_result.scalar_one()
-    owner.balance -= owner_earning
+
+    # Check if owner has sufficient balance for refund
+    if owner.balance < owner_refund:
+        raise ValueError("Unable to process refund at this time. The rig owner's balance is insufficient. Please contact support.")
+
+    owner.balance -= owner_refund
 
     tx_owner_refund = Transaction(
-        user_id=rental.owner_id, type="refund", amount=owner_earning,
+        user_id=rental.owner_id, type="refund", amount=owner_refund,
         status="completed", description=f"Earning reversed for cancelled rental #{rental.id}",
     )
     db.add(tx_owner_refund)

@@ -209,3 +209,45 @@ body {
   mask-image: radial-gradient(ellipse 80% 75% at center, black 35%, transparent 68%);
   -webkit-mask-image: radial-gradient(ellipse 80% 75% at center, black 35%, transparent 68%);
 }
+
+/* Auth sayfası logosu için premium tasarım */
+.logo-auth {
+  mask-image: radial-gradient(ellipse 92% 88% at center, black 60%, rgba(0,0,0,0.8) 75%, transparent 85%);
+  -webkit-mask-image: radial-gradient(ellipse 92% 88% at center, black 60%, rgba(0,0,0,0.8) 75%, transparent 85%);
+  filter: brightness(1.05) contrast(1.05);
+  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.logo-auth:hover {
+  filter: brightness(1.1) contrast(1.1);
+  transform: scale(1.02);
+}
+
+/* Logo container için backdrop */
+.logo-container-auth {
+  position: relative;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, rgba(0,240,255,0.03) 0%, rgba(138,43,226,0.03) 100%);
+  border-radius: 24px;
+  border: 1px solid rgba(0,240,255,0.1);
+  backdrop-filter: blur(10px);
+  transition: all 0.4s ease;
+  animation: logoEntrance 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.logo-container-auth:hover {
+  background: linear-gradient(135deg, rgba(0,240,255,0.05) 0%, rgba(138,43,226,0.05) 100%);
+  border-color: rgba(0,240,255,0.15);
+  box-shadow: 0 0 60px rgba(0,240,255,0.15);
+}
+
+@keyframes logoEntrance {
+  0% {
+    opacity: 0;
+    transform: scale(0.9) translateY(-10px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}

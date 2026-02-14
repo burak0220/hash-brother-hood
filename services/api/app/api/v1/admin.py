@@ -14,6 +14,7 @@ from app.models.transaction import Transaction
 from app.models.algorithm import Algorithm
 from app.models.notification import Notification
 from app.models.platform import PlatformSetting, AdminAuditLog
+from app.models.dispute import Dispute, DisputeMessage
 from app.schemas.user import UserResponse
 from app.schemas.admin import (
     AdminUserUpdate, AdminBalanceAdjust, AdminSendNotification,
@@ -330,9 +331,9 @@ async def list_all_rentals(
             {
                 "id": r.id, "rig_id": r.rig_id, "renter_id": r.renter_id,
                 "status": r.status, "duration_hours": r.duration_hours,
-                "total_cost": float(r.total_cost), "platform_fee": float(r.platform_fee),
+                "total_cost": float(r.total_cost),
                 "created_at": r.created_at.isoformat() if r.created_at else None,
-                "starts_at": r.starts_at.isoformat() if r.starts_at else None,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
                 "ends_at": r.ends_at.isoformat() if r.ends_at else None,
             }
             for r in rentals
@@ -508,6 +509,37 @@ async def admin_wallet_balance(admin: User = Depends(require_admin)):
         raise HTTPException(status_code=500, detail=f"Failed to fetch wallet balance: {str(e)}")
 
 
+## ========== DISPUTES ==========
+
+@router.get("/disputes")
+async def list_all_disputes(
+    status: str | None = None,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(Dispute).options(
+        selectinload(Dispute.opener),
+        selectinload(Dispute.rental),
+    ).order_by(Dispute.created_at.desc())
+    if status:
+        query = query.where(Dispute.status == status)
+    result = await db.execute(query)
+    disputes = result.scalars().all()
+    return [
+        {
+            "id": d.id,
+            "rental_id": d.rental_id,
+            "opened_by": d.opened_by,
+            "opener_username": d.opener.username if d.opener else None,
+            "reason": d.reason,
+            "status": d.status,
+            "resolution": d.resolution,
+            "created_at": d.created_at,
+        }
+        for d in disputes
+    ]
+
+
 ## ========== SETTINGS ==========
 
 @router.get("/settings", response_model=list[PlatformSettingResponse])
@@ -538,3 +570,218 @@ async def update_setting(
     await db.flush()
     await db.refresh(setting)
     return setting
+
+
+# ===== CANCELLATION REQUESTS =====
+
+@router.get("/cancellation-requests")
+async def list_cancellation_requests(
+    status: str | None = Query(None),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all cancellation requests (optionally filtered by status)."""
+    from app.models.cancellation_request import CancellationRequest
+    
+    query = select(CancellationRequest).options(
+        selectinload(CancellationRequest.rental),
+        selectinload(CancellationRequest.requester),
+        selectinload(CancellationRequest.reviewer)
+    ).order_by(CancellationRequest.created_at.desc())
+    
+    if status:
+        query = query.where(CancellationRequest.status == status)
+    
+    result = await db.execute(query)
+    requests = result.scalars().all()
+    
+    return [
+        {
+            "id": req.id,
+            "rental_id": req.rental_id,
+            "requester": req.requester.username if req.requester else None,
+            "reason": req.reason,
+            "description": req.description,
+            "status": req.status,
+            "admin_notes": req.admin_notes,
+            "reviewed_by": req.reviewer.username if req.reviewer else None,
+            "reviewed_at": req.reviewed_at,
+            "created_at": req.created_at,
+        }
+        for req in requests
+    ]
+
+
+@router.post("/cancellation-requests/{request_id}/approve")
+async def approve_cancellation(
+    request_id: int,
+    admin_notes: str,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Approve cancellation request and process refund based on hashrate performance.
+    
+    Refund calculation:
+    - Used time: Paid proportionally to actual hashrate (e.g., 65% performance = 65% payment)
+    - Unused time: Full refund
+    - Platform fee: Deducted from owner (no refund)
+    """
+    from app.models.cancellation_request import CancellationRequest
+    from app.services.hashrate import get_hashrate_stats
+    from app.services.rental import cancel_rental
+    from datetime import datetime, timezone
+    from decimal import Decimal
+    from app.core.config import settings
+    
+    result = await db.execute(
+        select(CancellationRequest)
+        .options(selectinload(CancellationRequest.rental))
+        .where(CancellationRequest.id == request_id)
+    )
+    req = result.scalar_one_or_none()
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    
+    if req.status != "pending":
+        raise HTTPException(status_code=400, detail=f"Request already {req.status}")
+    
+    rental = req.rental
+    if rental.status != "active":
+        raise HTTPException(status_code=400, detail="Rental is not active")
+    
+    now = datetime.now(timezone.utc)
+    
+    # Get hashrate stats
+    stats = await get_hashrate_stats(db, rental.id, hours=24)
+    avg_performance = stats.get("avg_percentage") or 100.0  # Default to 100% if no data
+    
+    # Calculate refund
+    total_seconds = max((rental.ends_at - rental.started_at).total_seconds(), 1)
+    used_seconds = max((now - rental.started_at).total_seconds(), 0)
+    used_ratio = min(Decimal(str(used_seconds / total_seconds)), Decimal("1"))
+    unused_ratio = Decimal("1") - used_ratio
+    
+    # Unused time: Full refund
+    unused_refund = (rental.total_cost * unused_ratio).quantize(Decimal("0.01"))
+    
+    # Used time: Refund based on performance loss
+    performance_ratio = Decimal(str(avg_performance / 100.0))  # e.g., 0.65
+    performance_loss = Decimal("1") - performance_ratio  # e.g., 0.35
+    used_refund = (rental.total_cost * used_ratio * performance_loss).quantize(Decimal("0.01"))
+    
+    total_refund = unused_refund + used_refund
+    
+    # Owner deduction (includes platform fee loss)
+    fee_percent = Decimal(str(settings.PLATFORM_FEE_PERCENT)) / Decimal("100")
+    owner_deduct = total_refund  # Owner loses full refund amount (including platform fee)
+    
+    # Process refund
+    renter = await db.execute(select(User).where(User.id == rental.renter_id))
+    renter = renter.scalar_one()
+    renter.balance += total_refund
+    
+    tx_renter = Transaction(
+        user_id=renter.id, type="refund", amount=total_refund,
+        status="completed",
+        description=f"Cancellation approved: {avg_performance:.1f}% avg hashrate (Request #{req.id})"
+    )
+    db.add(tx_renter)
+    
+    # Deduct from owner
+    owner = await db.execute(select(User).where(User.id == rental.owner_id))
+    owner = owner.scalar_one()
+    
+    if owner.balance < owner_deduct:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Owner has insufficient balance (has {float(owner.balance)}, needs {float(owner_deduct)})"
+        )
+    
+    owner.balance -= owner_deduct
+    
+    tx_owner = Transaction(
+        user_id=owner.id, type="refund", amount=owner_deduct,
+        status="completed",
+        description=f"Cancellation deduction: {avg_performance:.1f}% avg hashrate (Request #{req.id})"
+    )
+    db.add(tx_owner)
+    
+    # Update rental status
+    rental.status = "cancelled"
+    rental.cancelled_at = now
+    
+    # Restore rig
+    from app.models.rig import Rig
+    rig = await db.execute(select(Rig).where(Rig.id == rental.rig_id))
+    rig = rig.scalar_one()
+    rig.status = "active"
+    
+    # Update request
+    req.status = "approved"
+    req.reviewed_by = admin.id
+    req.reviewed_at = now
+    req.admin_notes = admin_notes
+    
+    # Audit log
+    log = AdminAuditLog(
+        admin_id=admin.id, action="approve_cancellation",
+        entity_type="cancellation_request", entity_id=str(request_id),
+        details={
+            "rental_id": rental.id,
+            "avg_hashrate_percent": float(avg_performance),
+            "total_refund": float(total_refund),
+            "unused_refund": float(unused_refund),
+            "used_refund": float(used_refund),
+        }
+    )
+    db.add(log)
+    
+    await db.flush()
+    
+    return {
+        "message": "Cancellation approved and refund processed",
+        "refund_details": {
+            "total_refund": float(total_refund),
+            "unused_refund": float(unused_refund),
+            "used_refund": float(used_refund),
+            "avg_hashrate_percent": float(avg_performance),
+        }
+    }
+
+
+@router.post("/cancellation-requests/{request_id}/reject")
+async def reject_cancellation(
+    request_id: int,
+    admin_notes: str,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reject cancellation request."""
+    from app.models.cancellation_request import CancellationRequest
+    from datetime import datetime, timezone
+    
+    result = await db.execute(
+        select(CancellationRequest).where(CancellationRequest.id == request_id)
+    )
+    req = result.scalar_one_or_none()
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    
+    if req.status != "pending":
+        raise HTTPException(status_code=400, detail=f"Request already {req.status}")
+    
+    req.status = "rejected"
+    req.reviewed_by = admin.id
+    req.reviewed_at = datetime.now(timezone.utc)
+    req.admin_notes = admin_notes
+    
+    log = AdminAuditLog(
+        admin_id=admin.id, action="reject_cancellation",
+        entity_type="cancellation_request", entity_id=str(request_id),
+    )
+    db.add(log)
+    
+    await db.flush()
+    
+    return {"message": "Cancellation request rejected"}

@@ -18,6 +18,10 @@ CREATE TABLE users (
     avatar_url VARCHAR(500),
     bio TEXT,
     bsc_wallet_address VARCHAR(255),
+    deposit_address VARCHAR(255) UNIQUE,
+    deposit_hd_index INT,
+    referral_code VARCHAR(20) UNIQUE,
+    referred_by INT REFERENCES users(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -40,10 +44,10 @@ CREATE TABLE rigs (
     name VARCHAR(200) NOT NULL,
     description TEXT,
     algorithm_id INT NOT NULL REFERENCES algorithms(id),
-    hashrate DECIMAL(20, 4) NOT NULL,
-    price_per_hour DECIMAL(18, 2) NOT NULL,
-    min_rental_hours INT DEFAULT 1,
-    max_rental_hours INT DEFAULT 720,
+    hashrate DECIMAL(20, 4) NOT NULL CHECK (hashrate > 0),
+    price_per_hour DECIMAL(18, 2) NOT NULL CHECK (price_per_hour > 0),
+    min_rental_hours INT DEFAULT 2 CHECK (min_rental_hours >= 1),
+    max_rental_hours INT DEFAULT 720 CHECK (max_rental_hours >= 1),
     status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'rented', 'maintenance')),
     region VARCHAR(50) DEFAULT 'auto',
     uptime_percentage DECIMAL(5, 2) DEFAULT 99.00,
@@ -64,10 +68,10 @@ CREATE TABLE rentals (
     renter_id INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     owner_id INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     algorithm_id INT NOT NULL REFERENCES algorithms(id),
-    hashrate DECIMAL(20, 4) NOT NULL,
-    price_per_hour DECIMAL(18, 2) NOT NULL,
-    duration_hours INT,
-    total_cost DECIMAL(18, 2) NOT NULL,
+    hashrate DECIMAL(20, 4) NOT NULL CHECK (hashrate > 0),
+    price_per_hour DECIMAL(18, 2) NOT NULL CHECK (price_per_hour > 0),
+    duration_hours INT CHECK (duration_hours >= 1),
+    total_cost DECIMAL(18, 2) NOT NULL CHECK (total_cost >= 0),
     status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'completed', 'cancelled', 'expired')),
     pool_url VARCHAR(500),
     pool_user VARCHAR(255),
@@ -143,7 +147,57 @@ CREATE TABLE admin_audit_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Disputes
+CREATE TABLE disputes (
+    id SERIAL PRIMARY KEY,
+    rental_id INT NOT NULL REFERENCES rentals(id) ON DELETE RESTRICT,
+    opened_by INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    reason TEXT NOT NULL,
+    status VARCHAR(20) DEFAULT 'open' CHECK (status IN ('open', 'under_review', 'resolved', 'rejected')),
+    resolution TEXT,
+    resolved_by INT REFERENCES users(id),
+    resolved_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE dispute_messages (
+    id SERIAL PRIMARY KEY,
+    dispute_id INT NOT NULL REFERENCES disputes(id) ON DELETE CASCADE,
+    sender_id INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_disputes_rental ON disputes(rental_id);
+CREATE INDEX idx_disputes_status ON disputes(status);
+CREATE INDEX idx_dispute_messages_dispute ON dispute_messages(dispute_id);
+
+-- Favorites (watchlist)
+CREATE TABLE favorites (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    rig_id INT NOT NULL REFERENCES rigs(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, rig_id)
+);
+
+CREATE INDEX idx_favorites_user ON favorites(user_id);
+
+-- Messages (direct messaging between users)
+CREATE TABLE messages (
+    id SERIAL PRIMARY KEY,
+    sender_id INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    receiver_id INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    content TEXT NOT NULL,
+    is_read BOOLEAN DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes
+CREATE INDEX idx_messages_sender ON messages(sender_id);
+CREATE INDEX idx_messages_receiver ON messages(receiver_id);
+CREATE INDEX idx_messages_conversation ON messages(LEAST(sender_id, receiver_id), GREATEST(sender_id, receiver_id), created_at DESC);
 CREATE INDEX idx_rigs_owner ON rigs(owner_id);
 CREATE INDEX idx_rigs_algorithm ON rigs(algorithm_id);
 CREATE INDEX idx_rigs_status ON rigs(status);
@@ -303,6 +357,6 @@ INSERT INTO platform_settings (key, value, description) VALUES
     ('maintenance_mode', 'false', 'Platform maintenance mode'),
     ('platform_wallet', '0x0000000000000000000000000000000000000000', 'Platform BSC wallet address for deposits');
 
--- NOTE: No default admin user. Create admin via CLI or migration script.
--- Example: INSERT INTO users (email, username, password_hash, role, is_active, is_verified)
---          VALUES ('admin@example.com', 'admin', '<bcrypt_hash>', 'admin', true, true);
+-- Default admin user (password: Admin123! — CHANGE IN PRODUCTION!)
+INSERT INTO users (email, username, password_hash, role, is_active, is_verified)
+VALUES ('admin@hashbrotherhood.com', 'admin', '$2b$12$fs0yQtLaZz/8s9WxhoNL2OB5bFwX4seOOcmbjn4XkcYwln1OGDFdO', 'admin', true, true);

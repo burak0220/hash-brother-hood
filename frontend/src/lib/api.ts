@@ -2,7 +2,8 @@ import axios from 'axios';
 import type {
   User, Algorithm, Rig, RigListResponse, Rental, RentalListResponse,
   Transaction, TransactionListResponse, Notification, NotificationListResponse,
-  Review, TokenResponse, AdminStats, PlatformSetting,
+  Review, TokenResponse, AdminStats, PlatformSetting, MessageItem, Conversation,
+  Dispute,
 } from '@/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
@@ -105,6 +106,7 @@ export const usersAPI = {
     api.put<User>('/users/me', data),
   changePassword: (data: { current_password: string; new_password: string }) =>
     api.post('/users/me/password', data),
+  earnings: () => api.get<{ date: string; earnings: number }[]>('/users/me/earnings'),
 };
 
 // Algorithms
@@ -147,6 +149,34 @@ export const paymentsAPI = {
     api.post<Transaction>('/payments/withdraw', data),
   transactions: (params?: { page?: number; per_page?: number; type?: string }) =>
     api.get<TransactionListResponse>('/payments/transactions', { params }),
+};
+
+// Disputes
+export const disputesAPI = {
+  list: () => api.get<Dispute[]>('/disputes'),
+  get: (id: number) => api.get<Dispute>(`/disputes/${id}`),
+  create: (data: { rental_id: number; reason: string }) =>
+    api.post('/disputes', data),
+  addMessage: (id: number, content: string) =>
+    api.post(`/disputes/${id}/message`, { content }),
+  resolve: (id: number, data: { resolution: string; action: string; refund_percent?: number }) =>
+    api.post(`/disputes/${id}/resolve`, data),
+};
+
+// Favorites
+export const favoritesAPI = {
+  list: () => api.get<{ rig_id: number; created_at: string }[]>('/favorites'),
+  add: (rigId: number) => api.post(`/favorites/${rigId}`),
+  remove: (rigId: number) => api.delete(`/favorites/${rigId}`),
+};
+
+// Messages
+export const messagesAPI = {
+  conversations: () => api.get<Conversation[]>('/messages/conversations'),
+  messages: (otherUserId: number, params?: { before_id?: number; limit?: number }) =>
+    api.get<MessageItem[]>(`/messages/${otherUserId}`, { params }),
+  send: (data: { receiver_id: number; content: string }) =>
+    api.post<MessageItem>('/messages/send', data),
 };
 
 // Notifications
@@ -200,6 +230,8 @@ export const adminAPI = {
     api.get('/admin/audit-logs', { params }),
   // Hot Wallet
   walletBalance: () => api.get<{ usdt_balance: number; bnb_balance: number }>('/admin/wallet-balance'),
+  // Disputes
+  disputes: (status?: string) => api.get('/admin/disputes', { params: { status } }),
   // Settings
   settings: () => api.get<PlatformSetting[]>('/admin/settings'),
   updateSetting: (key: string, value: string) =>

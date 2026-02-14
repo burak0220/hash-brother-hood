@@ -30,9 +30,9 @@ export default function SettingsPage() {
     try {
       const { data } = await usersAPI.update({ username, bio });
       setUser(data);
-      toast.success('Profile updated');
+      toast.success('Your profile has been updated successfully.');
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Update failed');
+      toast.error(err.response?.data?.detail || 'Unable to update your profile. Please try again.');
     }
     setSavingProfile(false);
   };
@@ -40,18 +40,18 @@ export default function SettingsPage() {
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPassword !== confirmPassword) {
-      toast.error('Passwords do not match');
+      toast.error('Passwords do not match. Please make sure both fields are identical.');
       return;
     }
     setSavingPassword(true);
     try {
       await usersAPI.changePassword({ current_password: currentPassword, new_password: newPassword });
-      toast.success('Password changed');
+      toast.success('Your password has been changed successfully.');
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Failed to change password');
+      toast.error(err.response?.data?.detail || 'Unable to change your password. Please check your current password and try again.');
     }
     setSavingPassword(false);
   };
@@ -63,7 +63,7 @@ export default function SettingsPage() {
       setTotpSecret(data.secret);
       setTotpUri(data.uri);
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Failed to enable 2FA');
+      toast.error(err.response?.data?.detail || 'Unable to initiate 2FA setup. Please try again.');
     }
     setToggling2FA(false);
   };
@@ -72,14 +72,14 @@ export default function SettingsPage() {
     setToggling2FA(true);
     try {
       await authAPI.verify2FA(totpCode);
-      toast.success('2FA enabled');
+      toast.success('Two-factor authentication has been enabled on your account.');
       setTotpSecret('');
       setTotpUri('');
       setTotpCode('');
       const { data } = await usersAPI.me();
       setUser(data);
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Invalid code');
+      toast.error(err.response?.data?.detail || 'The code you entered is incorrect. Please try again.');
     }
     setToggling2FA(false);
   };
@@ -88,12 +88,12 @@ export default function SettingsPage() {
     setToggling2FA(true);
     try {
       await authAPI.disable2FA(totpCode);
-      toast.success('2FA disabled');
+      toast.success('Two-factor authentication has been disabled.');
       setTotpCode('');
       const { data } = await usersAPI.me();
       setUser(data);
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Invalid code');
+      toast.error(err.response?.data?.detail || 'The code you entered is incorrect. Please try again.');
     }
     setToggling2FA(false);
   };
@@ -166,6 +166,32 @@ export default function SettingsPage() {
               <p className="text-sm text-dark-400">Protect your account with two-factor authentication.</p>
               <Button onClick={handleEnable2FA} loading={toggling2FA}>Enable 2FA</Button>
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Referral */}
+      <Card>
+        <CardHeader><CardTitle>Referral Program</CardTitle></CardHeader>
+        <CardContent>
+          <p className="text-sm text-dark-400 mb-4">Share your referral code with friends. When they sign up using your code, both of you benefit from the platform.</p>
+          {user?.referral_code ? (
+            <div className="flex items-center gap-3">
+              <div className="flex-1 px-4 py-2.5 bg-dark-800/80 border border-dark-600/50 rounded-xl text-white font-mono text-sm">
+                {user.referral_code}
+              </div>
+              <Button
+                size="sm"
+                onClick={() => {
+                  navigator.clipboard.writeText(user.referral_code || '');
+                  toast.success('Referral code copied to clipboard.');
+                }}
+              >
+                Copy
+              </Button>
+            </div>
+          ) : (
+            <p className="text-sm text-dark-500">Referral code not available</p>
           )}
         </CardContent>
       </Card>

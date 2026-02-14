@@ -1,3 +1,6 @@
+import asyncio
+
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -6,12 +9,26 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
-from app.api.v1 import auth, users, algorithms, rigs, rentals, payments, notifications, reviews, admin
+from app.api.v1 import auth, users, algorithms, rigs, rentals, payments, notifications, reviews, admin, messages, favorites, disputes, internal
+from app.services.scheduler import scheduler_loop
 
 limiter = Limiter(key_func=get_remote_address)
 
 docs_url = "/docs" if settings.ENV != "production" else None
 redoc_url = "/redoc" if settings.ENV != "production" else None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start background scheduler
+    task = asyncio.create_task(scheduler_loop())
+    yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
 
 app = FastAPI(
     title="HashBrotherHood API",
@@ -19,6 +36,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url=docs_url,
     redoc_url=redoc_url,
+    lifespan=lifespan,
 )
 
 app.state.limiter = limiter
@@ -49,6 +67,10 @@ app.include_router(rentals.router, prefix="/api/v1")
 app.include_router(payments.router, prefix="/api/v1")
 app.include_router(notifications.router, prefix="/api/v1")
 app.include_router(reviews.router, prefix="/api/v1")
+app.include_router(messages.router, prefix="/api/v1")
+app.include_router(favorites.router, prefix="/api/v1")
+app.include_router(disputes.router, prefix="/api/v1")
+app.include_router(internal.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 
 

@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import String, Boolean, Numeric, Text, DateTime, func
+from sqlalchemy import String, Boolean, Numeric, Text, DateTime, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -23,6 +23,10 @@ class User(Base):
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     bsc_wallet_address: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    deposit_address: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+    deposit_hd_index: Mapped[int | None] = mapped_column(nullable=True)
+    referral_code: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True)
+    referred_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
