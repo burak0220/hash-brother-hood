@@ -19,7 +19,7 @@ redoc_url = "/redoc" if settings.ENV != "production" else None
 
 
 async def _ensure_admin():
-    """Ensure admin account exists with correct password on startup."""
+    """Ensure admin account exists with correct password and deposit address on startup."""
     import logging
     from app.core.database import async_session
     from app.core.security import hash_password, verify_password
@@ -30,14 +30,26 @@ async def _ensure_admin():
 
     try:
         async with async_session() as db:
-            result = await db.execute(text("SELECT id, password_hash FROM users WHERE email = 'admin@hashbrotherhood.com'"))
+            result = await db.execute(text("SELECT id, password_hash, deposit_address FROM users WHERE email = 'admin@hashbrotherhood.com'"))
             row = result.fetchone()
             if row:
+                updated = False
                 if not verify_password(default_pw, row[1]):
                     new_hash = hash_password(default_pw)
                     await db.execute(text("UPDATE users SET password_hash = :h WHERE id = :id"), {"h": new_hash, "id": row[0]})
-                    await db.commit()
+                    updated = True
                     logger.info("Admin password hash re-synced")
+                if not row[2]:
+                    try:
+                        from app.services.hdwallet import derive_address_only
+                        addr = derive_address_only(row[0])
+                        await db.execute(text("UPDATE users SET deposit_address = :a, deposit_hd_index = :idx WHERE id = :id"), {"a": addr, "idx": row[0], "id": row[0]})
+                        updated = True
+                        logger.info(f"Admin deposit address generated: {addr}")
+                    except Exception as e:
+                        logger.warning(f"Could not generate admin deposit address: {e}")
+                if updated:
+                    await db.commit()
             else:
                 new_hash = hash_password(default_pw)
                 await db.execute(text(
@@ -45,14 +57,53 @@ async def _ensure_admin():
                     "VALUES ('admin@hashbrotherhood.com', 'admin', :h, 'admin', true, true)"
                 ), {"h": new_hash})
                 await db.commit()
-                logger.info("Admin account created")
+                # Generate deposit address for new admin
+                result = await db.execute(text("SELECT id FROM users WHERE email = 'admin@hashbrotherhood.com'"))
+                admin_row = result.fetchone()
+                if admin_row:
+                    try:
+                        from app.services.hdwallet import derive_address_only
+                        addr = derive_address_only(admin_row[0])
+                        await db.execute(text("UPDATE users SET deposit_address = :a, deposit_hd_index = :idx WHERE id = :id"), {"a": addr, "idx": admin_row[0], "id": admin_row[0]})
+                        await db.commit()
+                        logger.info(f"Admin account created with deposit address: {addr}")
+                    except Exception as e:
+                        logger.warning(f"Admin created but deposit address failed: {e}")
+                        logger.info("Admin account created")
     except Exception as e:
         logging.getLogger(__name__).warning(f"Admin check skipped: {e}")
+
+
+async def _ensure_deposit_addresses():
+    """Generate deposit addresses for any users missing them."""
+    import logging
+    from app.core.database import async_session
+    from sqlalchemy import text
+
+    logger = logging.getLogger(__name__)
+    try:
+        from app.services.hdwallet import derive_address_only
+        async with async_session() as db:
+            result = await db.execute(text("SELECT id FROM users WHERE deposit_address IS NULL"))
+            rows = result.fetchall()
+            if not rows:
+                return
+            for row in rows:
+                try:
+                    addr = derive_address_only(row[0])
+                    await db.execute(text("UPDATE users SET deposit_address = :a, deposit_hd_index = :idx WHERE id = :id"), {"a": addr, "idx": row[0], "id": row[0]})
+                except Exception as e:
+                    logger.warning(f"Deposit address failed for user {row[0]}: {e}")
+            await db.commit()
+            logger.info(f"Generated deposit addresses for {len(rows)} user(s)")
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"Deposit address generation skipped: {e}")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await _ensure_admin()
+    await _ensure_deposit_addresses()
     # Start background scheduler
     task = asyncio.create_task(scheduler_loop())
     yield
