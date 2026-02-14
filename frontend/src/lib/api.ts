@@ -39,6 +39,15 @@ function addRefreshSubscriber(cb: (token: string) => void) {
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
+    // Normalize detail: Pydantic validation errors return detail as array of objects.
+    // Convert to a readable string so toast.error() doesn't crash React.
+    if (error.response?.data?.detail && Array.isArray(error.response.data.detail)) {
+      const messages = error.response.data.detail
+        .map((e: any) => e.msg?.replace(/^Value error, /, '') || e.message || 'Validation error')
+        .join('. ');
+      error.response.data.detail = messages;
+    }
+
     const originalRequest = error.config;
 
     if (error.response?.status === 401 && typeof window !== 'undefined' && !originalRequest._retry) {
