@@ -60,3 +60,47 @@ class AuditLogResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── Sprint 2: Granular Admin Controls ──────────────────────────────────────
+
+
+class AdminRPIOverride(BaseModel):
+    """Manually override a rig's RPI score."""
+    rpi_score: Decimal = Field(ge=0, le=100, description="New RPI score (0-100)")
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class AdminRentalReview(BaseModel):
+    """Admin review of a completed rental — adjust/approve/reject refund."""
+    action: Literal["approve_refund", "reject_refund", "adjust_refund", "force_refund"]
+    refund_amount: Decimal | None = Field(default=None, ge=0, description="Custom refund amount (for adjust/force)")
+    reason: str = Field(default="", max_length=500)
+
+
+class AdminRigCorrection(BaseModel):
+    """Admin correction of rig's advertised hashrate or status."""
+    hashrate: Decimal | None = Field(default=None, gt=0)
+    status: Literal["active", "inactive", "maintenance", "disabled"] | None = None
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class MassRentRequest(BaseModel):
+    """Bulk rent multiple rigs with same pool config."""
+    rig_ids: list[int] = Field(min_length=1, max_length=20)
+    duration_hours: int = Field(ge=1)
+    pool_url: str = Field(max_length=500)
+    pool_user: str = Field(min_length=1, max_length=255)
+    pool_password: str = Field(default="x", max_length=255)
+    pool2_url: str | None = None
+    pool2_user: str | None = None
+    pool2_password: str | None = None
+    pool3_url: str | None = None
+    pool3_user: str | None = None
+    pool3_password: str | None = None
+    pool4_url: str | None = None
+    pool4_user: str | None = None
+    pool4_password: str | None = None
+    pool5_url: str | None = None
+    pool5_user: str | None = None
+    pool5_password: str | None = None

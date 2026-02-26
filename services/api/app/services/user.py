@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -23,5 +25,6 @@ async def change_password(db: AsyncSession, user: User, current_password: str, n
     if not verify_password(current_password, user.password_hash):
         return False
     user.password_hash = hash_password(new_password)
+    user.security_hold_until = datetime.now(timezone.utc) + timedelta(hours=24)
     await db.flush()
     return True

@@ -16,8 +16,8 @@ const features = [
     color: 'text-neon-green bg-neon-green/10',
   },
   {
-    title: 'USDT Payments',
-    desc: 'All transactions in USDT on Binance Smart Chain. Fast, cheap, reliable.',
+    title: 'LTC Payments',
+    desc: 'All transactions in Litecoin (LTC). Fast, low-fee, and blockchain-verified.',
     icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
     color: 'text-accent-400 bg-accent-400/10',
   },
@@ -44,7 +44,7 @@ const features = [
 const stats = [
   { value: '70+', label: 'Algorithms' },
   { value: '3%', label: 'Platform Fee' },
-  { value: 'BSC', label: 'Network' },
+  { value: 'LTC', label: 'Network' },
   { value: '24/7', label: 'Uptime' },
 ];
 
@@ -55,14 +55,14 @@ export default function AboutPage() {
       <div className="relative overflow-hidden neon-card rounded-2xl p-8 text-center">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-primary-400/5 rounded-full blur-[120px]" />
         <div className="relative">
-          <img src="/logo.svg" alt="HashBrotherHood" className="mx-auto w-[280px] h-auto drop-shadow-[0_0_30px_rgba(0,240,255,0.15)] mb-6" />
+          <img src="/logo.svg" alt="HashBrotherHood" className="mx-auto w-[280px] h-auto drop-shadow-[0_0_30px_rgba(251,146,60,0.2)] mb-6" />
           <h1 className="text-3xl font-black text-white mb-3">
             The Mining <span className="neon-text">Brotherhood</span>
           </h1>
           <p className="text-dark-300 max-w-lg mx-auto leading-relaxed">
             HashBrotherHood is a peer-to-peer cryptocurrency mining hashrate marketplace.
             Rent mining power on-demand or earn passive income by listing your rigs.
-            Built on Binance Smart Chain with USDT payments.
+            Built on Litecoin with LTC payments.
           </p>
         </div>
       </div>
@@ -115,7 +115,7 @@ export default function AboutPage() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {[
               { step: '01', title: 'Register', desc: 'Create your free account in seconds' },
-              { step: '02', title: 'Deposit', desc: 'Fund your wallet with USDT (BEP-20)' },
+              { step: '02', title: 'Deposit', desc: 'Fund your wallet with LTC (Litecoin)' },
               { step: '03', title: 'Choose Rig', desc: 'Browse and select from available rigs' },
               { step: '04', title: 'Start Mining', desc: 'Enter pool details and start hashing' },
             ].map((s) => (

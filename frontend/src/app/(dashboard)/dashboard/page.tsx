@@ -5,7 +5,7 @@ import Link from 'next/link';
 import Card, { CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { useAuthStore } from '@/stores/auth';
 import { rentalsAPI, rigsAPI, paymentsAPI, usersAPI } from '@/lib/api';
-import { formatUSDT, statusBadgeColor, formatDateTime } from '@/lib/utils';
+import { formatLTC, statusBadgeColor, formatDateTime } from '@/lib/utils';
 import type { Rental, Rig, Transaction } from '@/types';
 
 const HashrateChart = dynamic(() => import('@/components/charts/hashrate-chart'), { ssr: false });
@@ -18,20 +18,39 @@ export default function DashboardPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [earningsData, setEarningsData] = useState<{ date: string; earnings: number }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [ownerStats, setOwnerStats] = useState<any>(null);
+  const [hashrateData, setHashrateData] = useState<{ time: string; hashrate: number }[]>([]);
 
   useEffect(() => {
     async function load() {
       try {
-        const [rentalRes, rigRes, txRes, earningsRes] = await Promise.all([
+        const [rentalRes, rigRes, txRes, earningsRes, ownerRes] = await Promise.all([
           rentalsAPI.list({ role: 'renter', per_page: 5 }),
           rigsAPI.myRigs(),
           paymentsAPI.transactions({ per_page: 5 }),
           usersAPI.earnings().catch(() => ({ data: [] })),
+          rentalsAPI.ownerStats().catch(() => ({ data: null })),
         ]);
         setRentals(rentalRes.data.items);
         setRigs(rigRes.data);
         setTransactions(txRes.data.items);
         setEarningsData(earningsRes.data);
+        if (ownerRes.data) setOwnerStats(ownerRes.data);
+
+        // Fetch real hashrate data for the first active rental's rig
+        const activeRental = rentalRes.data.items.find((r: Rental) => r.status === 'active');
+        if (activeRental) {
+          rigsAPI.hashrateHistory(activeRental.rig_id, 24)
+            .then(({ data }) => {
+              if (data.length > 0) {
+                setHashrateData(data.map((d: any) => ({
+                  time: new Date(d.recorded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                  hashrate: d.measured_hashrate,
+                })));
+              }
+            })
+            .catch(() => {});
+        }
       } catch {}
       setLoading(false);
     }
@@ -61,7 +80,7 @@ export default function DashboardPage() {
             <h1 className="text-2xl font-black text-white">
               Welcome back, <span className="neon-text">{user?.username}</span>
             </h1>
-            <p className="text-dark-400 text-sm mt-1">Monitor your mining operations and earnings</p>
+            <p className="text-dark-400 text-sm mt-1">Monitor your hashpower operations and earnings</p>
           </div>
           <div className="flex gap-3">
             <Link href="/marketplace" className="group relative px-5 py-2.5 rounded-lg overflow-hidden">
@@ -72,7 +91,7 @@ export default function DashboardPage() {
                 Browse Rigs
               </span>
             </Link>
-            <Link href="/my-rigs/new" className="px-5 py-2.5 border border-dark-500/50 hover:border-primary-400/40 text-dark-200 hover:text-primary-400 rounded-lg text-sm font-bold transition-all duration-300 hover:shadow-[0_0_20px_rgba(0,240,255,0.08)] flex items-center gap-2">
+            <Link href="/my-rigs/new" className="px-5 py-2.5 border border-dark-500/50 hover:border-primary-400/40 text-dark-200 hover:text-primary-400 rounded-lg text-sm font-bold transition-all duration-300 hover:shadow-[0_0_20px_rgba(251,146,60,0.15)] flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
               Add Rig
             </Link>
@@ -85,8 +104,8 @@ export default function DashboardPage() {
         {[
           {
             label: 'Balance',
-            value: formatUSDT(user?.balance || 0),
-            suffix: 'USDT',
+            value: formatLTC(user?.balance || 0),
+            suffix: 'LTC',
             color: 'text-accent-400',
             glow: 'from-accent-400/15',
             border: 'hover:border-accent-400/30',
@@ -144,6 +163,31 @@ export default function DashboardPage() {
         ))}
       </div>
 
+      {/* Owner Earnings Banner */}
+      {ownerStats && ownerStats.rig_count > 0 && (
+        <div className="neon-card rounded-xl p-4">
+          <p className="text-xs text-dark-400 uppercase tracking-wider mb-3 font-medium">Rig Owner Stats</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="text-center">
+              <p className="text-xl font-bold text-accent-400">{formatLTC(ownerStats.total_earnings)}</p>
+              <p className="text-xs text-dark-500">Total Earned</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xl font-bold text-green-400">{ownerStats.active_rentals}</p>
+              <p className="text-xs text-dark-500">Active Incoming</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xl font-bold text-white">{ownerStats.total_rentals}</p>
+              <p className="text-xs text-dark-500">Total Incoming</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xl font-bold text-yellow-400">{ownerStats.avg_rpi}</p>
+              <p className="text-xs text-dark-500">Avg RPI</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Charts */}
       <div className="grid lg:grid-cols-2 gap-6">
         <Card>
@@ -159,10 +203,28 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {activeRentals > 0 ? (
-              <HashrateChart data={Array.from({ length: 24 }, (_, i) => ({ time: `${i}:00`, hashrate: 0 }))} />
+            {activeRentals > 0 && hashrateData.length > 0 ? (
+              <HashrateChart data={hashrateData} />
+            ) : activeRentals > 0 ? (
+              <div className="flex flex-col items-center justify-center h-[200px] gap-3">
+                <div className="w-10 h-10 rounded-xl bg-dark-800/60 flex items-center justify-center">
+                  <div className="w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+                <div className="text-center">
+                  <p className="text-dark-500 text-sm">Waiting for hashrate data</p>
+                  <p className="text-dark-600 text-xs mt-1">Data appears after the stratum proxy reports (~5 min)</p>
+                </div>
+              </div>
             ) : (
-              <div className="flex items-center justify-center h-[200px] text-dark-500 text-sm">No active rentals</div>
+              <div className="flex flex-col items-center justify-center h-[200px] gap-3">
+                <div className="w-10 h-10 rounded-xl bg-dark-800/60 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-dark-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                </div>
+                <div className="text-center">
+                  <p className="text-dark-500 text-sm">No active rentals</p>
+                  <Link href="/marketplace" className="text-xs text-primary-400 hover:text-primary-300 mt-1 inline-block transition-colors">Browse marketplace →</Link>
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -273,7 +335,7 @@ export default function DashboardPage() {
                         </div>
                       </div>
                       <span className={`text-sm font-bold ${isIncome ? 'text-green-400' : 'text-red-400'}`}>
-                        {isIncome ? '+' : '-'}{formatUSDT(tx.amount)} <span className="text-xs font-normal text-dark-500">USDT</span>
+                        {isIncome ? '+' : '-'}{formatLTC(tx.amount)} <span className="text-xs font-normal text-dark-500">LTC</span>
                       </span>
                     </div>
                   );

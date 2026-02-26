@@ -1,136 +1,101 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from sqlalchemy.exc import IntegrityError
 
 from app.models.user import User
 from app.models.transaction import Transaction
-from app.models.platform import PlatformSetting
-from app.services.blockchain import verify_deposit as bsc_verify_deposit
-
-
-async def _get_platform_address(db: AsyncSession) -> str | None:
-    """Get platform wallet address from settings."""
-    result = await db.execute(
-        select(PlatformSetting).where(PlatformSetting.key == "platform_wallet")
-    )
-    setting = result.scalar_one_or_none()
-    return setting.value if setting else None
 
 
 async def deposit(db: AsyncSession, user: User, amount: Decimal, tx_hash: str) -> Transaction:
-    """
-    Process a USDT deposit with BSC blockchain verification.
+    """Submit a manual deposit with a Litecoin transaction hash for verification."""
+    # Check for duplicate tx_hash
+    existing = await db.execute(
+        select(Transaction).where(
+            Transaction.tx_hash == tx_hash,
+            Transaction.type == "deposit",
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise ValueError("This transaction hash has already been submitted.")
 
-    Uses a unique constraint on tx_hash to prevent race conditions
-    instead of check-then-insert pattern.
-    """
-    # Get platform wallet address for verification
-    platform_address = await _get_platform_address(db)
-
-    if platform_address and platform_address != "0x0000000000000000000000000000000000000000":
-        # Verify on BSC
-        result = await bsc_verify_deposit(tx_hash, amount, platform_address)
-
-        if result["verified"]:
-            verified_amount = Decimal(str(result["amount"]))
-            user.balance += verified_amount
-            tx = Transaction(
-                user_id=user.id, type="deposit", amount=verified_amount,
-                status="completed", tx_hash=tx_hash,
-                wallet_address=result.get("from_address"),
-                description=f"Deposit of {verified_amount} USDT (verified on BSC, block #{result.get('block_number')})",
-            )
-            db.add(tx)
-            try:
-                await db.flush()
-            except IntegrityError:
-                await db.rollback()
-                raise ValueError("This transaction has already been processed. Each transaction hash can only be used once.")
-            await db.refresh(tx)
-            return tx
-
-        elif result["status"] == "pending":
-            tx = Transaction(
-                user_id=user.id, type="deposit", amount=amount,
-                status="pending", tx_hash=tx_hash,
-                description="Deposit pending BSC confirmation",
-            )
-            db.add(tx)
-            try:
-                await db.flush()
-            except IntegrityError:
-                await db.rollback()
-                raise ValueError("This transaction has already been processed. Each transaction hash can only be used once.")
-            await db.refresh(tx)
-            return tx
-
-        else:
-            raise ValueError(result.get("error", "We could not verify this transaction on the blockchain. Please check the transaction hash and try again."))
-    else:
-        raise ValueError("Deposits are temporarily unavailable due to system maintenance. Please try again later.")
+    tx = Transaction(
+        user_id=user.id,
+        type="deposit",
+        amount=amount,
+        status="pending",
+        tx_hash=tx_hash,
+        description=f"Manual deposit submission — pending LTC verification",
+    )
+    db.add(tx)
+    await db.flush()
+    await db.refresh(tx)
+    return tx
 
 
 async def verify_pending_deposit(db: AsyncSession, tx_id: int, user_id: int) -> Transaction:
-    """
-    Re-verify a pending deposit transaction on BSC.
-    Called by user or admin to check if a pending deposit has been confirmed.
-    """
+    """Re-verify a pending deposit on Litecoin and credit balance if confirmed."""
+    from app.services.blockchain import _rpc_call
+    from app.core.config import settings
+
     result = await db.execute(
-        select(Transaction).where(Transaction.id == tx_id)
+        select(Transaction).where(
+            Transaction.id == tx_id,
+            Transaction.user_id == user_id,
+            Transaction.type == "deposit",
+            Transaction.status == "pending",
+        )
     )
     tx = result.scalar_one_or_none()
     if not tx:
-        raise ValueError("The requested transaction could not be found.")
-    if tx.user_id != user_id:
-        raise ValueError("The requested transaction could not be found.")
-    if tx.type != "deposit" or tx.status != "pending":
-        raise ValueError("This transaction is not a pending deposit and cannot be verified.")
+        raise ValueError("Pending deposit not found.")
+    if not tx.tx_hash:
+        raise ValueError("No transaction hash associated with this deposit.")
 
-    platform_address = await _get_platform_address(db)
-    if not platform_address:
-        raise ValueError("Verification is temporarily unavailable due to system configuration. Please contact support.")
+    try:
+        tx_data = _rpc_call("getrawtransaction", [tx.tx_hash, True])
+    except Exception:
+        raise ValueError("Could not reach the blockchain. Please try again later.")
 
-    bsc_result = await bsc_verify_deposit(tx.tx_hash, tx.amount, platform_address)
+    if tx_data is None:
+        raise ValueError("Transaction not yet confirmed on blockchain. Please wait and try again.")
 
-    if bsc_result["verified"]:
-        verified_amount = Decimal(str(bsc_result["amount"]))
-        tx.amount = verified_amount
-        tx.status = "completed"
-        tx.wallet_address = bsc_result.get("from_address")
-        tx.description = f"Deposit of {verified_amount} USDT (verified on BSC, block #{bsc_result.get('block_number')})"
+    confirmations = tx_data.get("confirmations", 0)
+    if confirmations < 1:
+        raise ValueError("Transaction not yet confirmed on blockchain. Please wait and try again.")
 
-        # Credit user balance
-        user_result = await db.execute(select(User).where(User.id == tx.user_id))
-        user = user_result.scalar_one()
-        user.balance += verified_amount
+    # Credit balance and mark completed
+    user_result = await db.execute(select(User).where(User.id == user_id))
+    user = user_result.scalar_one()
+    user.balance += tx.amount
+    tx.status = "completed"
+    tx.description = f"Deposit of {tx.amount} LTC — verified on Litecoin"
 
-        await db.flush()
-        await db.refresh(tx)
-        return tx
-
-    elif bsc_result["status"] == "pending":
-        raise ValueError("Your transaction is still awaiting confirmation on the BSC network. This usually takes 15-30 seconds. Please try again shortly.")
-    else:
-        tx.status = "failed"
-        tx.description = f"Verification failed: {bsc_result.get('error')}"
-        await db.flush()
-        await db.refresh(tx)
-        raise ValueError(bsc_result.get("error", "Transaction verification failed. The transaction may be invalid or sent to the wrong address."))
+    await db.flush()
+    await db.refresh(tx)
+    return tx
 
 
 async def withdraw(db: AsyncSession, user: User, amount: Decimal, wallet_address: str) -> Transaction:
-    fee = Decimal("1.00")
+    now = datetime.now(timezone.utc)
+    if user.security_hold_until and user.security_hold_until > now:
+        hold_str = user.security_hold_until.strftime("%Y-%m-%d %H:%M UTC")
+        raise ValueError(
+            f"Withdrawals are temporarily blocked until {hold_str} due to a recent account security change. "
+            "This is a standard security measure to protect your funds."
+        )
+
+    fee = Decimal("0.0001")  # ~0.01 USD, dynamic LTC network fee
     total = amount + fee
     if user.balance < total:
-        raise ValueError("Insufficient balance for this withdrawal. Please ensure you have enough funds including the 1 USDT network fee.")
+        raise ValueError("Insufficient balance for this withdrawal. Please ensure you have enough funds including the network fee.")
 
     user.balance -= total
     tx = Transaction(
         user_id=user.id, type="withdrawal", amount=amount, fee=fee,
         status="pending", wallet_address=wallet_address,
-        description=f"Withdrawal of {amount} USDT to {wallet_address}",
+        description=f"Withdrawal of {amount} LTC to {wallet_address}",
     )
     db.add(tx)
     await db.flush()

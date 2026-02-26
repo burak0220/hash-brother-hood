@@ -8,7 +8,7 @@ from app.models.algorithm import Algorithm
 # Whitelist of allowed sort columns to prevent SQL injection
 ALLOWED_SORT_COLUMNS = {
     "created_at", "price_per_hour", "hashrate", "name",
-    "average_rating", "total_rentals", "uptime_percentage",
+    "average_rating", "total_rentals", "uptime_percentage", "rpi_score",
 }
 
 
@@ -16,6 +16,15 @@ async def create_rig(db: AsyncSession, owner_id: int, **kwargs) -> Rig:
     rig = Rig(owner_id=owner_id, **kwargs)
     db.add(rig)
     await db.flush()
+
+    # Auto-assign stratum connection info if not set
+    if not rig.stratum_host or not rig.stratum_port:
+        from app.core.config import settings
+        rig.stratum_host = settings.STRATUM_HOST
+        # Port = base_port + rig_id (unique per rig)
+        rig.stratum_port = settings.STRATUM_BASE_PORT + rig.id
+        await db.flush()
+
     await db.refresh(rig)
     return rig
 
@@ -48,8 +57,10 @@ async def list_marketplace_rigs(
     algorithm_id: int | None = None, sort_by: str = "created_at",
     sort_order: str = "desc", search: str | None = None,
     min_price: float | None = None, max_price: float | None = None,
+    min_hashrate: float | None = None, min_uptime: float | None = None,
+    min_rating: float | None = None,
 ) -> tuple[list[Rig], int]:
-    query = select(Rig).options(selectinload(Rig.algorithm), selectinload(Rig.owner)).where(Rig.status == "active")
+    query = select(Rig).options(selectinload(Rig.algorithm), selectinload(Rig.owner)).where(Rig.status.in_(["active", "rented"]))
 
     if algorithm_id:
         query = query.where(Rig.algorithm_id == algorithm_id)
@@ -59,6 +70,12 @@ async def list_marketplace_rigs(
         query = query.where(Rig.price_per_hour >= min_price)
     if max_price is not None:
         query = query.where(Rig.price_per_hour <= max_price)
+    if min_hashrate is not None:
+        query = query.where(Rig.hashrate >= min_hashrate)
+    if min_uptime is not None:
+        query = query.where(Rig.uptime_percentage >= min_uptime)
+    if min_rating is not None:
+        query = query.where(Rig.average_rating >= min_rating)
 
     count_query = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_query)).scalar() or 0

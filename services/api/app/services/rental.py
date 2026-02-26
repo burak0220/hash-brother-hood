@@ -15,6 +15,10 @@ from app.models.transaction import Transaction
 async def create_rental(
     db: AsyncSession, renter: User, rig_id: int,
     duration_hours: int, pool_url: str, pool_user: str, pool_password: str = "x",
+    pool2_url: str | None = None, pool2_user: str | None = None, pool2_password: str | None = None,
+    pool3_url: str | None = None, pool3_user: str | None = None, pool3_password: str | None = None,
+    pool4_url: str | None = None, pool4_user: str | None = None, pool4_password: str | None = None,
+    pool5_url: str | None = None, pool5_user: str | None = None, pool5_password: str | None = None,
 ) -> Rental:
     result = await db.execute(
         select(Rig).options(selectinload(Rig.algorithm)).where(Rig.id == rig_id)
@@ -30,6 +34,9 @@ async def create_rental(
         raise ValueError(f"Rental duration must be between {rig.min_rental_hours} and {rig.max_rental_hours} hours for this rig.")
 
     total_cost = rig.price_per_hour * Decimal(str(duration_hours))
+    renter_fee_pct = Decimal(str(settings.RENTER_FEE_PERCENT)) / Decimal("100")
+    renter_fee = (total_cost * renter_fee_pct).quantize(Decimal("0.01"))
+    total_with_fee = total_cost + renter_fee
 
     # Row-level lock to prevent double-spend race condition
     locked_renter = await db.execute(
@@ -37,10 +44,10 @@ async def create_rental(
     )
     renter = locked_renter.scalar_one()
 
-    if renter.balance < total_cost:
-        raise ValueError("Insufficient balance to complete this rental. Please deposit funds to your wallet.")
+    if renter.balance < total_with_fee:
+        raise ValueError(f"Insufficient balance. Rental cost: {total_cost} + {renter_fee} fee = {total_with_fee} LTC")
 
-    renter.balance -= total_cost
+    renter.balance -= total_with_fee
 
     now = datetime.now(timezone.utc)
     rental = Rental(
@@ -51,11 +58,26 @@ async def create_rental(
         hashrate=rig.hashrate,
         price_per_hour=rig.price_per_hour,
         duration_hours=duration_hours,
+        original_duration_hours=duration_hours,
         total_cost=total_cost,
+        escrow_amount=total_cost,  # Lock full amount in escrow
         status="active",
+        rpi_at_start=rig.rpi_score,
         pool_url=pool_url,
         pool_user=pool_user,
         pool_password=pool_password,
+        pool2_url=pool2_url,
+        pool2_user=pool2_user,
+        pool2_password=pool2_password,
+        pool3_url=pool3_url,
+        pool3_user=pool3_user,
+        pool3_password=pool3_password,
+        pool4_url=pool4_url,
+        pool4_user=pool4_user,
+        pool4_password=pool4_password,
+        pool5_url=pool5_url,
+        pool5_user=pool5_user,
+        pool5_password=pool5_password,
         started_at=now,
         ends_at=now + timedelta(hours=duration_hours),
     )
@@ -64,28 +86,23 @@ async def create_rental(
     rig.status = "rented"
     rig.total_rentals += 1
 
-    # Create transaction for renter
+    # Transaction: renter pays into escrow + fee
     tx_renter = Transaction(
-        user_id=renter.id, type="rental_payment", amount=total_cost,
-        status="completed", description=f"Rental payment for rig #{rig.id}",
+        user_id=renter.id, type="escrow_lock", amount=total_with_fee,
+        status="completed", description=f"Escrow {total_cost} + fee {renter_fee} for rig #{rig.id}",
         reference_id=str(rental.id) if rental.id else None,
     )
     db.add(tx_renter)
 
-    # Platform fee from config (not hardcoded)
-    fee_percent = Decimal(str(settings.PLATFORM_FEE_PERCENT)) / Decimal("100")
-    platform_fee = total_cost * fee_percent
-    owner_earning = total_cost - platform_fee
+    # Renter fee transaction (platform revenue)
+    if renter_fee > 0:
+        tx_fee = Transaction(
+            user_id=renter.id, type="renter_fee", amount=renter_fee,
+            status="completed", description=f"3% service fee for rental of rig #{rig.id}",
+        )
+        db.add(tx_fee)
 
-    owner_result = await db.execute(select(User).where(User.id == rig.owner_id))
-    owner = owner_result.scalar_one()
-    owner.balance += owner_earning
-
-    tx_owner = Transaction(
-        user_id=rig.owner_id, type="rental_earning", amount=owner_earning,
-        status="completed", description=f"Earning from rig #{rig.id} rental",
-    )
-    db.add(tx_owner)
+    # Owner does NOT get paid yet — escrow releases after rental completes + review window
 
     await db.flush()
     await db.refresh(rental)
@@ -111,58 +128,152 @@ async def cancel_rental(db: AsyncSession, rental: Rental, user: User) -> Rental:
         raise ValueError("This rental cannot be cancelled in its current state.")
 
     now = datetime.now(timezone.utc)
-    original_status = rental.status  # Save original status before changing it
+    original_status = rental.status
 
-    # Calculate refund amount (partial for active rentals)
-    if original_status == "active" and rental.started_at and rental.ends_at:
-        total_seconds = (rental.ends_at - rental.started_at).total_seconds()
+    # Use escrow_amount (original cost only — extensions are settled immediately to owner)
+    escrow = rental.escrow_amount or rental.total_cost
+    renter_fee_pct = Decimal(str(settings.RENTER_FEE_PERCENT)) / Decimal("100")
+    original_renter_fee = (escrow * renter_fee_pct).quantize(Decimal("0.01"))
+
+    # Calculate refund based on escrow and original duration (not extended ends_at)
+    if original_status == "active" and rental.started_at:
+        original_duration_hours = rental.original_duration_hours or rental.duration_hours or 0
+        original_total_seconds = original_duration_hours * 3600
         used_seconds = max((now - rental.started_at).total_seconds(), 0)
-        unused_ratio = max(Decimal(str(1 - used_seconds / total_seconds)), Decimal("0"))
-        refund_amount = (rental.total_cost * unused_ratio).quantize(Decimal("0.01"))
+        if original_total_seconds > 0 and used_seconds < original_total_seconds:
+            unused_ratio = max(Decimal(str(1 - used_seconds / original_total_seconds)), Decimal("0"))
+        else:
+            unused_ratio = Decimal("0")
+        refund_amount = (escrow * unused_ratio).quantize(Decimal("0.01"))
+        fee_refund = (original_renter_fee * unused_ratio).quantize(Decimal("0.01"))
     else:
-        # Pending rental = full refund
-        refund_amount = rental.total_cost
+        # Pending rental = full refund including fee
+        refund_amount = escrow
+        fee_refund = original_renter_fee
 
-    # Update status after refund calculation
+    total_refund = refund_amount + fee_refund
+
     rental.status = "cancelled"
     rental.cancelled_at = now
 
     fee_percent = Decimal(str(settings.PLATFORM_FEE_PERCENT)) / Decimal("100")
 
-    # Refund renter
+    # Refund renter: unused escrow portion + proportional fee refund
     renter_result = await db.execute(select(User).where(User.id == rental.renter_id))
     renter = renter_result.scalar_one()
-    renter.balance += refund_amount
+    renter.balance += total_refund
 
     tx = Transaction(
-        user_id=renter.id, type="refund", amount=refund_amount,
+        user_id=renter.id, type="refund", amount=total_refund,
         status="completed", description=f"Refund for cancelled rental #{rental.id}",
     )
     db.add(tx)
 
-    # Deduct owner earning proportionally
-    platform_fee = refund_amount * fee_percent
-    owner_refund = refund_amount - platform_fee
+    # Pay owner for delivered portion (from escrow only, extensions already settled)
+    used_amount = escrow - refund_amount
+    if used_amount > Decimal("0.00"):
+        platform_fee = (used_amount * fee_percent).quantize(Decimal("0.01"))
+        owner_earning = used_amount - platform_fee
 
-    owner_result = await db.execute(select(User).where(User.id == rental.owner_id))
-    owner = owner_result.scalar_one()
+        owner_result = await db.execute(select(User).where(User.id == rental.owner_id))
+        owner = owner_result.scalar_one()
+        owner.balance += owner_earning
 
-    # Check if owner has sufficient balance for refund
-    if owner.balance < owner_refund:
-        raise ValueError("Unable to process refund at this time. The rig owner's balance is insufficient. Please contact support.")
-
-    owner.balance -= owner_refund
-
-    tx_owner_refund = Transaction(
-        user_id=rental.owner_id, type="refund", amount=owner_refund,
-        status="completed", description=f"Earning reversed for cancelled rental #{rental.id}",
-    )
-    db.add(tx_owner_refund)
+        tx_owner = Transaction(
+            user_id=rental.owner_id, type="rental_earning", amount=owner_earning,
+            status="completed", description=f"Partial earning for cancelled rental #{rental.id} ({used_amount} LTC delivered)",
+        )
+        db.add(tx_owner)
 
     # Restore rig
     rig_result = await db.execute(select(Rig).where(Rig.id == rental.rig_id))
     rig = rig_result.scalar_one()
     rig.status = "active"
+
+    await db.flush()
+    await db.refresh(rental)
+    return rental
+
+
+async def extend_rental(db: AsyncSession, rental: Rental, user: User, hours: int) -> Rental:
+    """Extend an active rental's duration. Only the renter can extend."""
+    if rental.status != "active":
+        raise ValueError("Only active rentals can be extended.")
+    if rental.renter_id != user.id:
+        raise ValueError("Only the renter can extend a rental.")
+    if rental.extensions_disabled:
+        raise ValueError("Extensions have been disabled for this rental.")
+
+    # Check max hours from the rig
+    rig_result = await db.execute(select(Rig).where(Rig.id == rental.rig_id))
+    rig = rig_result.scalar_one_or_none()
+    if not rig:
+        raise ValueError("Rig not found.")
+
+    current_total = (rental.original_duration_hours or rental.duration_hours) + rental.extended_hours
+    new_total = current_total + hours
+    if new_total > rig.max_rental_hours:
+        max_extend = rig.max_rental_hours - current_total
+        raise ValueError(f"Cannot extend beyond max rental hours ({rig.max_rental_hours}h). You can extend by up to {max_extend}h more.")
+
+    # Calculate extension cost at current price
+    ext_cost = rental.price_per_hour * Decimal(str(hours))
+
+    # Renter pays ext_cost + 3% renter fee (double-sided fee model)
+    renter_fee_pct = Decimal(str(settings.RENTER_FEE_PERCENT)) / Decimal("100")
+    renter_fee = (ext_cost * renter_fee_pct).quantize(Decimal("0.01"))
+    ext_total_with_fee = ext_cost + renter_fee
+
+    # Lock renter balance
+    locked_renter = await db.execute(select(User).where(User.id == user.id).with_for_update())
+    renter = locked_renter.scalar_one()
+    if renter.balance < ext_total_with_fee:
+        raise ValueError(f"Insufficient balance for extension. Cost: {ext_cost} + {renter_fee} fee = {ext_total_with_fee} LTC")
+
+    renter.balance -= ext_total_with_fee
+
+    # Update rental
+    rental.duration_hours = (rental.duration_hours or 0) + hours
+    rental.extended_hours += hours
+    rental.extension_cost += ext_cost
+    rental.total_cost += ext_cost
+    rental.ends_at = rental.ends_at + timedelta(hours=hours) if rental.ends_at else None
+
+    # Record extension
+    from app.models.rental_extension import RentalExtension
+    ext = RentalExtension(
+        rental_id=rental.id,
+        hours=hours,
+        price_per_hour=rental.price_per_hour,
+        total_cost=ext_cost,
+    )
+    db.add(ext)
+
+    # Payment to owner (minus platform fee — owner also pays 3%)
+    fee_percent = Decimal(str(settings.PLATFORM_FEE_PERCENT)) / Decimal("100")
+    platform_fee = ext_cost * fee_percent
+    owner_earning = ext_cost - platform_fee
+
+    owner_result = await db.execute(select(User).where(User.id == rental.owner_id))
+    owner = owner_result.scalar_one()
+    owner.balance += owner_earning
+
+    # Transactions
+    tx_renter = Transaction(
+        user_id=renter.id, type="rental_extension", amount=ext_total_with_fee,
+        status="completed", description=f"Extension payment for rental #{rental.id} (+{hours}h): {ext_cost} + {renter_fee} fee",
+    )
+    tx_fee = Transaction(
+        user_id=renter.id, type="renter_fee", amount=renter_fee,
+        status="completed", description=f"3% service fee for extension of rental #{rental.id}",
+    )
+    tx_owner = Transaction(
+        user_id=owner.id, type="rental_earning", amount=owner_earning,
+        status="completed", description=f"Extension earning from rental #{rental.id} (+{hours}h)",
+    )
+    db.add(tx_renter)
+    db.add(tx_fee)
+    db.add(tx_owner)
 
     await db.flush()
     await db.refresh(rental)
@@ -203,6 +314,7 @@ def rental_to_response(rental: Rental) -> dict:
         "id": rental.id,
         "rig_id": rental.rig_id,
         "rig_name": rental.rig.name if rental.rig else None,
+        "rig_region": rental.rig.region if rental.rig else None,
         "renter_id": rental.renter_id,
         "owner_id": rental.owner_id,
         "algorithm_id": rental.algorithm_id,
@@ -211,10 +323,43 @@ def rental_to_response(rental: Rental) -> dict:
         "price_per_hour": rental.price_per_hour,
         "duration_hours": rental.duration_hours,
         "total_cost": rental.total_cost,
+        "escrow_amount": rental.escrow_amount or rental.total_cost,
+        "escrow_released": rental.escrow_released,
         "status": rental.status,
+        # 5-pool failover
         "pool_url": rental.pool_url,
         "pool_user": rental.pool_user,
         "pool_password": rental.pool_password,
+        "pool2_url": rental.pool2_url,
+        "pool2_user": rental.pool2_user,
+        "pool2_password": rental.pool2_password,
+        "pool3_url": rental.pool3_url,
+        "pool3_user": rental.pool3_user,
+        "pool3_password": rental.pool3_password,
+        "pool4_url": rental.pool4_url,
+        "pool4_user": rental.pool4_user,
+        "pool4_password": rental.pool4_password,
+        "pool5_url": rental.pool5_url,
+        "pool5_user": rental.pool5_user,
+        "pool5_password": rental.pool5_password,
+        "actual_hashrate_avg": rental.actual_hashrate_avg,
+        "performance_percent": rental.performance_percent,
+        # Extension info
+        "original_duration_hours": rental.original_duration_hours,
+        "extended_hours": rental.extended_hours,
+        "extension_cost": rental.extension_cost,
+        "extensions_disabled": rental.extensions_disabled,
+        # Share-based refund
+        "expected_shares": rental.expected_shares,
+        "actual_shares": rental.actual_shares,
+        "rejected_shares": rental.rejected_shares,
+        "refund_amount": rental.refund_amount,
+        "refund_reason": rental.refund_reason,
+        "reviewed_at": rental.reviewed_at,
+        # RPI snapshot
+        "rpi_at_start": rental.rpi_at_start,
+        # Timestamps
+        "dispute_window_ends": rental.dispute_window_ends,
         "started_at": rental.started_at,
         "ends_at": rental.ends_at,
         "completed_at": rental.completed_at,

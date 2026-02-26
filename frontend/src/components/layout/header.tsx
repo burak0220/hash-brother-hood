@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth';
 import { notificationsAPI } from '@/lib/api';
-import { formatUSDT } from '@/lib/utils';
+import { formatLTC } from '@/lib/utils';
 
 const headerNav = [
   {
@@ -66,21 +66,21 @@ export default function Header() {
           {/* Balance */}
           {user && (
             <Link href="/wallet" className="group flex items-center gap-2.5 pl-2 pr-4 py-1.5 bg-dark-800/60 border border-neon-gold/15 rounded-xl hover:border-neon-gold/40 hover:bg-dark-800/80 hover:shadow-[0_0_20px_rgba(240,176,0,0.1)] transition-all duration-300">
-              {/* USDT Icon */}
-              <div className="w-7 h-7 rounded-full bg-[#26A17B] flex items-center justify-center shadow-[0_0_8px_rgba(38,161,123,0.3)] group-hover:shadow-[0_0_12px_rgba(38,161,123,0.5)] transition-shadow">
+              {/* LTC Icon */}
+              <div className="w-7 h-7 rounded-full bg-[#345D9D] flex items-center justify-center shadow-[0_0_8px_rgba(52,93,157,0.3)] group-hover:shadow-[0_0_12px_rgba(52,93,157,0.5)] transition-shadow">
                 <svg className="w-4 h-4" viewBox="0 0 32 32" fill="none">
-                  <path d="M18.5 14.9v-2.3h5.4V8.4H8.2v4.2h5.4v2.3c-4.6.2-8 1.2-8 2.4s3.5 2.2 8 2.4v8.5h4.8v-8.5c4.6-.2 8-1.2 8-2.4s-3.4-2.2-8-2.4zm0 3.9v-.01c-.2 0-.8.04-2.4.04-1.2 0-2-.03-2.4-.04v.01c-4.1-.18-7.1-1-7.1-1.9 0-.92 3.1-1.72 7.1-1.9v3.03c.4.03 1.2.08 2.4.08 1.5 0 2.2-.06 2.4-.08V15c4-.18 7.1-.98 7.1-1.9 0-.9-3.1-1.72-7.1-1.9z" fill="white"/>
+                  <path d="M16 4C9.37 4 4 9.37 4 16s5.37 12 12 12 12-5.37 12-12S22.63 4 16 4zm-1.5 17.5l.9-3.4-1.1.3.3-1.2 1.1-.3 1.5-5.7h2l-1.5 5.7 1.1-.3-.3 1.2-1.1.3-.9 3.4h-2zm4.5 0l.4-1.5h-1.5l.4-1.5h1.5l1.1-4.2h1.5l-1.1 4.2h1.5l-.4 1.5h-1.5l-.4 1.5h-1.5z" fill="white"/>
                 </svg>
               </div>
               <div className="flex flex-col -space-y-0.5">
-                <span className="text-sm font-black text-white group-hover:text-neon-gold transition-colors">{formatUSDT(user.balance)}</span>
-                <span className="text-[9px] text-dark-400 font-medium tracking-wider">USDT</span>
+                <span className="text-sm font-black text-white group-hover:text-neon-gold transition-colors">{formatLTC(user.balance)}</span>
+                <span className="text-[9px] text-dark-400 font-medium tracking-wider">LTC</span>
               </div>
             </Link>
           )}
 
           {/* Notifications */}
-          <Link href="/notifications" className="relative p-2 text-dark-400 hover:text-neon-cyan transition-colors duration-300">
+          <Link href="/notifications" className="relative p-2 text-dark-400 hover:text-primary-400 transition-colors duration-300">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
             </svg>
@@ -94,8 +94,8 @@ export default function Header() {
           {/* User */}
           {user && (
             <Link href="/settings" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-neon-green flex items-center justify-center shadow-neon">
-                <span className="text-dark-950 text-sm font-black">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary-400 to-primary-700 flex items-center justify-center shadow-neon">
+                <span className="text-white text-sm font-black">
                   {user.username.charAt(0).toUpperCase()}
                 </span>
               </div>

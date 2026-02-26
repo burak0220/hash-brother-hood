@@ -36,9 +36,9 @@ function MatrixRain() {
     const drops: number[] = Array(columns).fill(1);
 
     const draw = () => {
-      ctx.fillStyle = 'rgba(5, 10, 14, 0.06)';
+      ctx.fillStyle = 'rgba(9, 9, 9, 0.06)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#00f0ff12';
+      ctx.fillStyle = '#fb923c0a';
       ctx.font = `${fontSize}px monospace`;
 
       for (let i = 0; i < drops.length; i++) {
@@ -77,8 +77,8 @@ export default function LandingPage() {
       <nav className={`fixed top-0 w-full z-50 transition-all duration-500 ${scrollY > 50 ? 'bg-dark-950/90 backdrop-blur-xl border-b border-primary-400/10' : ''}`}>
         <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2 opacity-80 hover:opacity-100 transition-opacity">
-            <img src="/logo.svg" alt="HB" className="w-[32px] h-[32px] object-contain" />
-            <span className="text-sm font-bold text-primary-400 tracking-widest uppercase hidden sm:block">HBH</span>
+            <img src="/logo.svg" alt="HashBrotherHood" className="w-[32px] h-[32px] object-contain" />
+            <span className="text-sm font-black tracking-tight hidden sm:block"><span className="text-white">Hash</span><span className="text-primary-400">Brother</span><span className="text-white">Hood</span></span>
           </Link>
           <div className="flex items-center gap-2">
             <Link href="/login" className="px-4 py-1.5 text-sm text-dark-300 hover:text-white transition-colors">
@@ -106,26 +106,26 @@ export default function LandingPage() {
           <img
             src="/logo.svg"
             alt="HashBrotherHood"
-            className="w-[480px] h-auto drop-shadow-[0_0_60px_rgba(0,240,255,0.2)]"
+            className="w-full max-w-[520px] h-auto drop-shadow-[0_0_60px_rgba(251,146,60,0.25)]"
           />
         </div>
 
         {/* Tagline */}
         <div className={`relative z-10 text-center mt-6 transition-all duration-1000 delay-300 ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
           <p className="text-lg md:text-2xl text-dark-200 font-light tracking-[0.15em]">
-            MINING HASHRATE MARKETPLACE
+            HASHRATE MARKETPLACE
           </p>
         </div>
 
         {/* CTA Buttons */}
         <div className={`relative z-10 flex gap-4 mt-10 transition-all duration-1000 delay-500 ${loaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
           <Link href="/register" className="group relative px-8 py-3.5 rounded-lg overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-primary-400 to-neon-green opacity-90 group-hover:opacity-100 transition-opacity" />
-            <div className="absolute inset-0 bg-gradient-to-r from-primary-400 to-neon-green blur-xl opacity-40 group-hover:opacity-60 transition-opacity" />
-            <span className="relative z-10 text-dark-950 font-black text-sm tracking-wider uppercase">Start Mining</span>
+            <div className="absolute inset-0 bg-gradient-to-r from-primary-400 to-accent-500 opacity-90 group-hover:opacity-100 transition-opacity" />
+            <div className="absolute inset-0 bg-gradient-to-r from-primary-400 to-accent-500 blur-xl opacity-40 group-hover:opacity-60 transition-opacity" />
+            <span className="relative z-10 text-dark-950 font-black text-sm tracking-wider uppercase">Rent Hashpower</span>
           </Link>
-          <Link href="/marketplace" className="group px-8 py-3.5 border border-dark-500/50 hover:border-primary-400/40 rounded-lg transition-all duration-300 hover:shadow-[0_0_30px_rgba(0,240,255,0.08)]">
-            <span className="text-dark-200 group-hover:text-primary-400 font-semibold text-sm tracking-wider uppercase transition-colors">Explore Rigs</span>
+          <Link href="/marketplace" className="group px-8 py-3.5 border border-dark-500/50 hover:border-primary-400/40 rounded-lg transition-all duration-300 hover:shadow-[0_0_30px_rgba(251,146,60,0.15)]">
+            <span className="text-dark-200 group-hover:text-primary-400 font-semibold text-sm tracking-wider uppercase transition-colors">Browse Market</span>
           </Link>
         </div>
 
@@ -177,9 +177,9 @@ export default function LandingPage() {
             <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
               {[
                 { n: '01', title: 'REGISTER', desc: 'Create your account. Takes 10 seconds.', color: 'border-primary-400/30' },
-                { n: '02', title: 'DEPOSIT', desc: 'Fund your wallet with USDT.', color: 'border-neon-green/30' },
+                { n: '02', title: 'DEPOSIT', desc: 'Fund your wallet with LTC.', color: 'border-neon-green/30' },
                 { n: '03', title: 'SELECT RIG', desc: 'Browse marketplace. Pick your rig.', color: 'border-accent-400/30' },
-                { n: '04', title: 'MINE', desc: 'Point to your pool. Start hashing.', color: 'border-primary-400/30' },
+                { n: '04', title: 'HASH', desc: 'Point to your pool. Start hashing.', color: 'border-primary-400/30' },
               ].map((step, i) => (
                 <div key={step.n} className={`relative bg-dark-900/40 backdrop-blur-sm border ${step.color} rounded-xl p-6 hover:bg-dark-800/40 transition-all duration-500 group`}>
                   <div className="absolute -top-3 left-6 px-2 bg-dark-950 text-primary-400 text-xs font-mono tracking-widest">{step.n}</div>
@@ -188,7 +188,7 @@ export default function LandingPage() {
                     <p className="text-sm text-dark-400 leading-relaxed">{step.desc}</p>
                   </div>
                   {/* Dot on the line */}
-                  <div className="hidden lg:block absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-primary-400 rounded-full shadow-[0_0_10px_rgba(0,240,255,0.5)] opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <div className="hidden lg:block absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-primary-400 rounded-full shadow-[0_0_10px_rgba(251,146,60,0.5)] opacity-0 group-hover:opacity-100 transition-opacity" />
                 </div>
               ))}
             </div>
@@ -217,7 +217,7 @@ export default function LandingPage() {
                 <h3 className="text-2xl font-black text-white mb-3">Instant Hashpower Access</h3>
                 <p className="text-dark-300 leading-relaxed max-w-md">
                   No hardware purchases. No electricity bills. No maintenance headaches.
-                  Connect to mining rigs within minutes and start earning immediately.
+                  Rent hashpower within minutes and start earning immediately.
                   Pay only for what you use.
                 </p>
                 <div className="mt-6 flex gap-3">
@@ -250,7 +250,7 @@ export default function LandingPage() {
               <div className="flex flex-col md:flex-row md:items-center gap-6">
                 <div className="flex-1">
                   <h3 className="text-lg font-black text-white mb-2">Earn Passive Income as a Rig Owner</h3>
-                  <p className="text-sm text-dark-400">List your mining rigs on the marketplace. Set your own prices. Earn USDT while you sleep. The brotherhood takes care of the rest.</p>
+                  <p className="text-sm text-dark-400">List your rigs on the marketplace. Set your own prices. Earn LTC while you sleep. The brotherhood takes care of the rest.</p>
                 </div>
                 <Link href="/register" className="shrink-0 px-6 py-3 bg-accent-400/10 border border-accent-400/30 text-accent-400 rounded-lg font-bold text-sm hover:bg-accent-400/20 transition-all">
                   List Your Rig
@@ -331,8 +331,8 @@ export default function LandingPage() {
             Mine together. Earn together. Grow together.
           </p>
           <Link href="/register" className="group relative inline-block px-10 py-4 rounded-xl overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-primary-400 to-neon-green opacity-90 group-hover:opacity-100 transition-opacity" />
-            <div className="absolute inset-0 bg-gradient-to-r from-primary-400 to-neon-green blur-2xl opacity-30 group-hover:opacity-50 transition-opacity" />
+            <div className="absolute inset-0 bg-gradient-to-r from-primary-400 to-accent-500 opacity-90 group-hover:opacity-100 transition-opacity" />
+            <div className="absolute inset-0 bg-gradient-to-r from-primary-400 to-accent-500 blur-2xl opacity-30 group-hover:opacity-50 transition-opacity" />
             <span className="relative z-10 text-dark-950 font-black tracking-wider uppercase">Create Account</span>
           </Link>
         </div>

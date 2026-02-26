@@ -19,6 +19,17 @@ class RigCreate(BaseModel):
     stratum_host: str | None = None
     stratum_port: int | None = Field(default=None, ge=1, le=65535)
     worker_prefix: str | None = None
+    # MRR features
+    suggested_difficulty: str | None = None
+    optimal_diff_min: int | None = Field(default=None, ge=1)
+    optimal_diff_max: int | None = Field(default=None, ge=1)
+    ndevices: int = Field(default=1, ge=1, le=10000)
+    extensions_enabled: bool = True
+    auto_price_enabled: bool = False
+    auto_price_margin: Decimal = Field(default=Decimal("0"), ge=-50, le=100)
+    owner_pool_url: str | None = None
+    owner_pool_user: str | None = None
+    owner_pool_password: str | None = "x"
 
     @model_validator(mode='after')
     def validate_rental_hours(self):
@@ -39,6 +50,17 @@ class RigUpdate(BaseModel):
     stratum_host: str | None = None
     stratum_port: int | None = Field(default=None, ge=1, le=65535)
     worker_prefix: str | None = None
+    # MRR features
+    suggested_difficulty: str | None = None
+    optimal_diff_min: int | None = Field(default=None, ge=1)
+    optimal_diff_max: int | None = Field(default=None, ge=1)
+    ndevices: int | None = Field(default=None, ge=1, le=10000)
+    extensions_enabled: bool | None = None
+    auto_price_enabled: bool | None = None
+    auto_price_margin: Decimal | None = None
+    owner_pool_url: str | None = None
+    owner_pool_user: str | None = None
+    owner_pool_password: str | None = None
 
 
 class RigResponse(BaseModel):
@@ -62,6 +84,18 @@ class RigResponse(BaseModel):
     stratum_port: int | None = None
     worker_prefix: str | None = None
     is_featured: bool
+    # MRR features
+    rpi_score: Decimal
+    suggested_difficulty: str | None = None
+    optimal_diff_min: int | None = None
+    optimal_diff_max: int | None = None
+    ndevices: int = 1
+    extensions_enabled: bool = True
+    auto_price_enabled: bool = False
+    auto_price_margin: Decimal = Decimal("0")
+    owner_pool_url: str | None = None
+    owner_pool_user: str | None = None
+    owner_pool_password: str | None = None
     created_at: datetime
     updated_at: datetime
 

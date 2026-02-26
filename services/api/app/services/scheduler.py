@@ -1,15 +1,12 @@
-"""Background scheduler to handle rental expiry and other periodic tasks."""
+"""Background scheduler to handle rental expiry, LTC deposit scanning, UTXO sweep, and other periodic tasks."""
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from web3 import Web3
-from web3.middleware import geth_poa_middleware
-from web3.exceptions import Web3Exception
 
 from app.core.database import async_session as async_session_factory
 from app.core.config import settings
@@ -17,31 +14,14 @@ from app.models.rental import Rental
 from app.models.rig import Rig
 from app.models.user import User
 from app.models.transaction import Transaction
+from app.services.blockchain import _get_address_utxos_sync
 
 logger = logging.getLogger(__name__)
 
-# Track last scanned block number
-_last_scanned_block = None
-# Track consecutive RPC errors for backoff
-_rpc_error_count = 0
-_last_rpc_error_time = None
-
-# USDT contract addresses
-USDT_MAINNET = "0x55d398326f99059fF775485246999027B3197955"
-USDT_TESTNET = "0x337610d27c682E347C9cD60BD4b3b107C9d34dDd"
-USDT_DECIMALS = 18
-USDT_CONTRACT = USDT_MAINNET if settings.BSC_NETWORK == "mainnet" else USDT_TESTNET
-
-# Transfer event signature
-TRANSFER_EVENT_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
-
 
 async def scan_deposits():
-    """Scan user deposit addresses for incoming USDT transfers."""
-    global _last_scanned_block, _rpc_error_count, _last_rpc_error_time
-
+    """Scan user deposit addresses for incoming LTC transfers via Blockchair API."""
     try:
-        # Get all users with deposit addresses
         async with async_session_factory() as db:
             result = await db.execute(
                 select(User).where(User.deposit_address.isnot(None))
@@ -51,148 +31,134 @@ async def scan_deposits():
             if not users:
                 return
 
-            # Create Web3 instance
-            w3 = Web3(Web3.HTTPProvider(settings.BSC_RPC_URL))
-            w3.middleware_onion.inject(geth_poa_middleware, layer=0)
-
-            try:
-                current_block = w3.eth.block_number
-            except Exception as e:
-                # RPC connection error
-                _rpc_error_count += 1
-                _last_rpc_error_time = datetime.now(timezone.utc)
-                logger.warning(f"RPC connection error (attempt #{_rpc_error_count}): {e}")
-                return
-
-            # Initialize last scanned block
-            if _last_scanned_block is None:
-                _last_scanned_block = current_block - 10  # Scan last 10 blocks on startup (~30 seconds)
-
-            # Don't scan if no new blocks
-            if current_block <= _last_scanned_block:
-                return
-
-            # Build address filter (lowercase for comparison)
-            user_addresses = {user.deposit_address.lower(): user for user in users}
-
-            # Calculate blocks to scan
-            blocks_to_scan = current_block - _last_scanned_block
-
-            # If we have a lot of blocks to catch up (e.g., after downtime),
-            # split into smaller batches to avoid RPC timeout
-            BATCH_SIZE = 50  # Scan max 50 blocks per RPC call
-            scan_from = _last_scanned_block + 1
-            scan_to_block = _last_scanned_block  # Will be updated as we scan
-            all_logs = []
-
-            while scan_from <= current_block:
-                batch_to = min(scan_from + BATCH_SIZE - 1, current_block)
-
-                logger.info(f"Scanning blocks {scan_from} to {batch_to} ({batch_to - scan_from + 1} blocks)")
-
-                # Scan this batch with retry logic
-                max_retries = 3
-                batch_logs = None
-                for retry in range(max_retries):
-                    try:
-                        batch_logs = w3.eth.get_logs({
-                            'address': Web3.to_checksum_address(USDT_CONTRACT),
-                            'fromBlock': scan_from,
-                            'toBlock': batch_to,
-                            'topics': [TRANSFER_EVENT_TOPIC]
-                        })
-                        # Success - reset error count
-                        _rpc_error_count = 0
-                        break
-                    except Exception as rpc_error:
-                        _rpc_error_count += 1
-                        if retry < max_retries - 1:
-                            # Exponential backoff: 2^retry seconds
-                            backoff = 2 ** retry
-                            logger.warning(f"RPC rate limit hit scanning blocks {scan_from}-{batch_to} (attempt {retry + 1}/{max_retries}), retrying in {backoff}s...")
-                            await asyncio.sleep(backoff)
-                        else:
-                            # Final retry failed - skip this batch and try next time
-                            logger.error(f"RPC scan failed for blocks {scan_from}-{batch_to} after {max_retries} retries: {rpc_error}")
-                            # Don't update _last_scanned_block, so we retry this range next time
-                            return
-
-                if batch_logs is not None:
-                    all_logs.extend(batch_logs)
-                    scan_to_block = batch_to  # Update progress
-
-                scan_from = batch_to + 1
-
-            # Process all collected logs
-            logs = all_logs
-
             deposits_found = 0
 
-            for log in logs:
-                # Parse Transfer event: Transfer(address indexed from, address indexed to, uint256 value)
-                if len(log['topics']) < 3:
-                    continue
-
-                # Decode 'to' address from topic[2]
-                to_address = "0x" + log['topics'][2].hex()[-40:]
-                to_address_lower = to_address.lower()
-
-                # Check if this is a deposit to one of our users
-                if to_address_lower not in user_addresses:
-                    continue
-
-                user = user_addresses[to_address_lower]
-
-                # Decode amount from data
-                amount_raw = int(log['data'].hex(), 16)
-                amount = Decimal(amount_raw) / Decimal(10 ** USDT_DECIMALS)
-
-                # Get transaction hash
-                tx_hash = log['transactionHash'].hex()
-
-                # Check if we already processed this deposit
-                existing = await db.execute(
-                    select(Transaction).where(
-                        Transaction.user_id == user.id,
-                        Transaction.tx_hash == tx_hash,
-                        Transaction.type == "deposit"
+            for user in users:
+                try:
+                    utxos = await asyncio.to_thread(
+                        _get_address_utxos_sync, user.deposit_address
                     )
-                )
-                if existing.scalar_one_or_none():
+                    # 350ms between addresses — stay within BlockCypher free tier (3 req/s)
+                    await asyncio.sleep(0.35)
+                except Exception as e:
+                    logger.warning(f"UTXO scan failed for {user.deposit_address}: {e}")
                     continue
 
-                # Add to user balance
-                user.balance += amount
+                # Only process UTXOs with enough confirmations (MRR standard: 3)
+                confirmed = [u for u in utxos if u["confirmations"] >= settings.DEPOSIT_MIN_CONFIRMATIONS]
 
-                # Create transaction record
-                tx = Transaction(
-                    user_id=user.id,
-                    type="deposit",
-                    amount=amount,
-                    status="completed",
-                    tx_hash=tx_hash,
-                    description=f"Auto-detected deposit to {user.deposit_address[:10]}..."
-                )
-                db.add(tx)
+                for utxo in confirmed:
+                    tx_hash = utxo["txid"]
+                    amount  = Decimal(str(utxo["amount"]))
 
-                deposits_found += 1
-                logger.info(f"Deposit detected: User {user.id} received {float(amount)} USDT (tx: {tx_hash})")
+                    if amount <= 0:
+                        continue
 
-            # Commit all changes
+                    # Check if we already processed this UTXO
+                    existing = await db.execute(
+                        select(Transaction).where(
+                            Transaction.user_id == user.id,
+                            Transaction.tx_hash == tx_hash,
+                            Transaction.type == "deposit",
+                        )
+                    )
+                    if existing.scalar_one_or_none():
+                        continue
+
+                    # Credit user balance
+                    user.balance += amount
+                    db.add(Transaction(
+                        user_id=user.id,
+                        type="deposit",
+                        amount=amount,
+                        status="completed",
+                        tx_hash=tx_hash,
+                        description=f"LTC deposit to {user.deposit_address[:12]}...",
+                    ))
+                    deposits_found += 1
+                    logger.info(
+                        f"Deposit: user {user.id} +{float(amount)} LTC (tx: {tx_hash})"
+                    )
+
             if deposits_found > 0:
                 await db.commit()
-                logger.info(f"Processed {deposits_found} new deposits")
-
-            # Update last scanned block (only update to what we actually scanned)
-            _last_scanned_block = scan_to_block
+                logger.info(f"Processed {deposits_found} new LTC deposits")
 
     except Exception as e:
-        _rpc_error_count += 1
         logger.error(f"Deposit scan error: {e}")
 
 
+async def sweep_deposits():
+    """
+    Sweep LTC from user deposit addresses to hot wallet.
+    Uses UTXO batching: multiple inputs → single output = minimal fee.
+    """
+    if not settings.SWEEP_ENABLED:
+        return
+
+    if not settings.HOT_WALLET_ADDRESS:
+        return
+
+    try:
+        from app.services.hdwallet import derive_private_key
+
+        async with async_session_factory() as db:
+            result = await db.execute(
+                select(User).where(
+                    User.deposit_address.isnot(None),
+                    User.deposit_hd_index.isnot(None),
+                )
+            )
+            users = result.scalars().all()
+
+            if not users:
+                return
+
+            # Collect addresses with >= SWEEP_MIN_LTC confirmed and ready to sweep
+            address_key_pairs = []
+            for user in users:
+                try:
+                    utxos = await asyncio.to_thread(
+                        _get_address_utxos_sync, user.deposit_address
+                    )
+                    sweepable_total = sum(
+                        u["amount"] for u in utxos
+                        if u["confirmations"] >= settings.SWEEP_MIN_CONFIRMATIONS
+                    )
+                except Exception:
+                    continue
+
+                if sweepable_total >= settings.SWEEP_MIN_LTC:
+                    wif = derive_private_key(user.deposit_hd_index)
+                    address_key_pairs.append((user.deposit_address, wif))
+
+            if not address_key_pairs:
+                return
+
+            # Execute sweep
+            from app.services.blockchain import sweep_addresses
+
+            sweep_result = await sweep_addresses(
+                address_key_pairs, settings.HOT_WALLET_ADDRESS
+            )
+
+            if sweep_result.get("success"):
+                logger.info(
+                    f"Sweep completed: {sweep_result['utxo_count']} UTXOs, "
+                    f"{sweep_result['total_swept']} LTC swept, "
+                    f"fee: {sweep_result['fee']} LTC, tx: {sweep_result['tx_hash']}"
+                )
+            elif sweep_result.get("error") != "No UTXOs found to sweep":
+                logger.warning(f"Sweep failed: {sweep_result.get('error')}")
+
+    except Exception as e:
+        logger.error(f"Sweep error: {e}")
+
+
 async def expire_rentals():
-    """Mark expired rentals as completed and restore rig status."""
+    """Mark expired rentals as completed with performance stats, and restore rig status."""
+    from app.models.hashrate_log import HashrateLog
+
     async with async_session_factory() as db:
         now = datetime.now(timezone.utc)
 
@@ -208,95 +174,248 @@ async def expire_rentals():
         for rental in expired_rentals:
             rental.status = "completed"
             rental.completed_at = now
+            # Set 12-hour escrow hold (MRR style: owner paid after 12h)
+            rental.dispute_window_ends = now + timedelta(hours=12)
+
+            # Calculate actual average hashrate and performance %
+            stats_result = await db.execute(
+                select(
+                    func.avg(HashrateLog.measured_hashrate).label("avg_hr"),
+                    func.avg(HashrateLog.percentage).label("avg_pct"),
+                ).where(HashrateLog.rental_id == rental.id)
+            )
+            stats = stats_result.one_or_none()
+            if stats and stats.avg_hr is not None:
+                rental.actual_hashrate_avg = Decimal(str(round(float(stats.avg_hr), 4)))
+                rental.performance_percent = Decimal(str(round(float(stats.avg_pct), 2)))
 
             # Restore rig to active
             await db.execute(
                 update(Rig).where(Rig.id == rental.rig_id).values(status="active")
             )
-            logger.info(f"Rental #{rental.id} expired and marked as completed")
+            logger.info(f"Rental #{rental.id} expired and marked as completed (perf: {rental.performance_percent}%)")
 
         if expired_rentals:
             await db.commit()
             logger.info(f"Processed {len(expired_rentals)} expired rentals")
 
 
-async def scheduler_loop():
-    """Run periodic tasks."""
-    global _rpc_error_count
+async def process_rental_reviews():
+    """
+    Process completed rentals after 12-hour review window.
+    Release escrow to owner based on performance, calculate refunds.
+    """
+    from app.services.rpi import update_rig_rpi
 
+    async with async_session_factory() as db:
+        now = datetime.now(timezone.utc)
+
+        # Find completed rentals past the 12h review window that haven't been reviewed yet
+        result = await db.execute(
+            select(Rental).where(
+                Rental.status == "completed",
+                Rental.dispute_window_ends <= now,
+                Rental.reviewed_at.is_(None),
+                Rental.escrow_released.is_(False),
+            )
+        )
+        rentals_to_review = result.scalars().all()
+
+        for rental in rentals_to_review:
+            rental.reviewed_at = now
+            escrow = rental.escrow_amount or rental.total_cost
+            fee_percent = Decimal(str(settings.PLATFORM_FEE_PERCENT)) / Decimal("100")
+
+            refund = Decimal("0")
+            perf = float(rental.performance_percent) if rental.performance_percent is not None else 100.0
+
+            # MRR-style: pure prorated refund based on delivery
+            # 100% delivered = 0% refund, 70% delivered = 30% refund, 0% delivered = 100% refund
+            if perf < 95.0:
+                missing_pct = (100.0 - perf) / 100.0
+                refund = Decimal(str(round(float(escrow) * missing_pct, 2)))
+                if refund < Decimal("0.01"):
+                    refund = Decimal("0")
+
+            # Owner gets escrow minus refund minus platform fee
+            owner_amount = escrow - refund
+            platform_fee = owner_amount * fee_percent
+            owner_earning = owner_amount - platform_fee
+
+            # Release to owner
+            if owner_earning > 0:
+                owner_result = await db.execute(select(User).where(User.id == rental.owner_id))
+                owner = owner_result.scalar_one_or_none()
+                if owner:
+                    owner.balance += owner_earning
+                    db.add(Transaction(
+                        user_id=owner.id, type="escrow_release", amount=owner_earning,
+                        status="completed",
+                        description=f"Escrow released for rental #{rental.id} ({perf:.1f}% delivery)"
+                    ))
+
+            # Refund renter if applicable
+            if refund > 0:
+                rental.refund_amount = refund
+                rental.refund_reason = f"Auto-refund: rig delivered {perf:.1f}% of advertised hashrate"
+
+                renter_result = await db.execute(select(User).where(User.id == rental.renter_id))
+                renter = renter_result.scalar_one_or_none()
+                if renter:
+                    renter.balance += refund
+                    db.add(Transaction(
+                        user_id=renter.id, type="refund", amount=refund,
+                        status="completed",
+                        description=f"Auto-refund for rental #{rental.id}: {perf:.1f}% hashrate delivery"
+                    ))
+                logger.info(f"Rental #{rental.id} refund: {refund} LTC ({perf:.1f}% delivery)")
+
+            # Mark escrow as released
+            rental.escrow_released = True
+            rental.escrow_released_at = now
+
+            # Referral bonus: if renter was referred, give referrer 1% of rental cost
+            renter_for_ref = await db.execute(select(User).where(User.id == rental.renter_id))
+            renter_ref = renter_for_ref.scalar_one_or_none()
+            if renter_ref and renter_ref.referred_by:
+                ref_bonus = escrow * Decimal("0.01")
+                if ref_bonus >= Decimal("0.01"):
+                    referrer_result = await db.execute(select(User).where(User.id == renter_ref.referred_by))
+                    referrer = referrer_result.scalar_one_or_none()
+                    if referrer:
+                        referrer.balance += ref_bonus
+                        db.add(Transaction(
+                            user_id=referrer.id, type="referral_bonus", amount=ref_bonus,
+                            status="completed",
+                            description=f"Referral bonus from rental #{rental.id}"
+                        ))
+                        logger.info(f"Referral bonus {ref_bonus} LTC to user #{referrer.id} for rental #{rental.id}")
+
+            # Update rig RPI after review
+            await update_rig_rpi(db, rental.rig_id)
+            logger.info(f"Rental #{rental.id} escrow released: owner={owner_earning}, refund={refund}, fee={platform_fee}")
+
+        if rentals_to_review:
+            await db.commit()
+            logger.info(f"Reviewed {len(rentals_to_review)} completed rentals")
+
+
+async def auto_cancel_low_hashrate():
+    """
+    Auto-cancel rentals if rig is offline/low-hashrate in first 30 minutes.
+    Rule: If rig is offline for 20+ minutes in the first 30 minutes -> auto cancel + full refund.
+    """
+    from app.models.hashrate_log import HashrateLog
+    from app.models.transaction import Transaction
+
+    async with async_session_factory() as db:
+        now = datetime.now(timezone.utc)
+        thirty_mins_ago = now - timedelta(minutes=30)
+
+        # Find active rentals started within the last 30 minutes
+        result = await db.execute(
+            select(Rental).where(
+                Rental.status == "active",
+                Rental.started_at >= thirty_mins_ago,
+                Rental.auto_cancelled == False,
+            )
+        )
+        early_rentals = result.scalars().all()
+
+        for rental in early_rentals:
+            if not rental.started_at:
+                continue
+
+            elapsed_minutes = (now - rental.started_at).total_seconds() / 60
+            if elapsed_minutes < 20:
+                # Not enough time to evaluate
+                continue
+
+            # Count minutes with hashrate data (1 sample per minute assumed)
+            data_result = await db.execute(
+                select(func.count(HashrateLog.id)).where(
+                    HashrateLog.rental_id == rental.id,
+                    HashrateLog.measured_hashrate > 0,
+                )
+            )
+            active_minutes = data_result.scalar() or 0
+
+            total_result = await db.execute(
+                select(func.count(HashrateLog.id)).where(HashrateLog.rental_id == rental.id)
+            )
+            total_samples = total_result.scalar() or 0
+
+            # If we have at least some samples but rig was offline >20 of first 30 min
+            if total_samples > 0:
+                offline_minutes = elapsed_minutes - active_minutes
+            else:
+                offline_minutes = elapsed_minutes  # No data = all offline
+
+            if offline_minutes >= 20:
+                # Auto-cancel with full refund
+                rental.status = "cancelled"
+                rental.cancelled_at = now
+                rental.auto_cancelled = True
+
+                # Full refund of escrow only (extensions already settled to owner separately)
+                escrow = rental.escrow_amount or rental.total_cost
+                renter_fee_pct = Decimal(str(settings.RENTER_FEE_PERCENT)) / Decimal("100")
+                renter_fee = (escrow * renter_fee_pct).quantize(Decimal("0.01"))
+                full_refund = escrow + renter_fee
+
+                renter_result = await db.execute(select(User).where(User.id == rental.renter_id))
+                renter = renter_result.scalar_one_or_none()
+                if renter:
+                    renter.balance += full_refund
+                    db.add(Transaction(
+                        user_id=renter.id, type="refund", amount=full_refund,
+                        status="completed",
+                        description=f"Auto-cancel full refund for rental #{rental.id} (rig offline {offline_minutes:.0f}min in first 30min)"
+                    ))
+
+                # Restore rig
+                await db.execute(update(Rig).where(Rig.id == rental.rig_id).values(status="active"))
+                logger.info(f"Auto-cancelled rental #{rental.id}: rig offline {offline_minutes:.0f}min in first 30min")
+
+        await db.commit()
+
+
+async def scheduler_loop():
+    """Run periodic tasks every 60 seconds."""
     loop_count = 0
 
     while True:
         try:
-            # Run tasks in parallel
+            # scan_deposits MUST complete before sweep_deposits runs
+            # to avoid sweeping UTXOs before they're credited to user balance
+            await scan_deposits()
+
             await asyncio.gather(
                 expire_rentals(),
-                scan_deposits(),
+                auto_cancel_low_hashrate(),
+                process_rental_reviews(),
             )
 
-            # Run hashrate monitoring every 5 minutes (every 5th loop)
             loop_count += 1
+
             if loop_count % 5 == 0:
                 await monitor_hashrates()
-                loop_count = 0  # Reset to prevent overflow
+
+            # Sweep runs after scan in same loop — never before
+            if loop_count % 10 == 0:
+                await sweep_deposits()
+                loop_count = 0
 
         except Exception as e:
             logger.error(f"Scheduler error: {e}")
 
-        # Dynamic sleep interval based on RPC errors (exponential backoff)
-        # Normal: 60 seconds, After errors: up to 300 seconds (5 minutes)
-        base_interval = 60
-        if _rpc_error_count > 0:
-            # Exponential backoff: min(60 * 2^(errors-1), 300)
-            backoff_interval = min(base_interval * (2 ** (_rpc_error_count - 1)), 300)
-            logger.info(f"Using backoff interval: {backoff_interval}s due to {_rpc_error_count} consecutive RPC errors")
-            await asyncio.sleep(backoff_interval)
-        else:
-            await asyncio.sleep(base_interval)  # Check every 60 seconds (~20 blocks per scan)
+        await asyncio.sleep(60)
 
 
 async def monitor_hashrates():
     """
-    Monitor hashrates of active rentals.
-    
-    This is a placeholder - in production, integrate with mining pool APIs.
-    For now, generates simulated data for testing.
+    Hashrate data is now reported by the stratum proxy via
+    POST /api/v1/internal/hashrate-report every 5 minutes.
+    This function is kept as a no-op so the scheduler loop is unchanged.
     """
-    async with async_session_factory() as db:
-        try:
-            # Get all active rentals
-            result = await db.execute(
-                select(Rental).where(Rental.status == "active")
-            )
-            active_rentals = result.scalars().all()
-            
-            if not active_rentals:
-                return
-            
-            from app.services.hashrate import log_hashrate
-            import random
-            
-            for rental in active_rentals:
-                # TODO: Replace with real mining pool API integration
-                # Example: get_hashrate_from_pool(rental.pool_url, rental.pool_user)
-                
-                # For now: Simulate realistic hashrate (90-110% of advertised)
-                # In production, remove this and use real pool API
-                advertised = float(rental.hashrate)
-                variance = random.uniform(0.9, 1.1)  # ±10% variance
-                measured = advertised * variance
-                
-                # Log the measurement
-                await log_hashrate(
-                    db=db,
-                    rental_id=rental.id,
-                    measured_hashrate=measured,
-                    advertised_hashrate=advertised,
-                    source="pool_api"  # Change to "simulated" if using test data
-                )
-                
-            await db.commit()
-            logger.info(f"Monitored {len(active_rentals)} active rentals")
-            
-        except Exception as e:
-            logger.error(f"Hashrate monitoring error: {e}")
+    pass

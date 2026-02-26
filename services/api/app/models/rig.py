@@ -16,7 +16,7 @@ class Rig(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     algorithm_id: Mapped[int] = mapped_column(ForeignKey("algorithms.id"))
     hashrate: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=False)
-    price_per_hour: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    price_per_hour: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
     min_rental_hours: Mapped[int] = mapped_column(Integer, default=1)
     max_rental_hours: Mapped[int] = mapped_column(Integer, default=720)
     status: Mapped[str] = mapped_column(String(20), default="active")
@@ -28,6 +28,28 @@ class Rig(Base):
     stratum_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     worker_prefix: Mapped[str | None] = mapped_column(String(100), nullable=True)
     is_featured: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # --- MRR Feature Parity ---
+    # RPI (Rig Performance Index) — 0-100, auto-calculated from hashrate consistency, uptime, refunds
+    rpi_score: Mapped[Decimal] = mapped_column(Numeric(6, 2), default=Decimal("100.00"))
+    # Suggested work difficulty for renters
+    suggested_difficulty: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Optimal difficulty range — min/max acceptable work difficulty for this rig
+    # If set, pool must send work within this range or shares will be invalid
+    optimal_diff_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    optimal_diff_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Number of physical mining devices making up this rig
+    ndevices: Mapped[int] = mapped_column(Integer, default=1)
+    # Allow renters to extend active rentals
+    extensions_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Auto pricing — adjust price based on market average
+    auto_price_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    auto_price_margin: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0.00"))
+    # Owner's fallback pool (used when not rented or all renter pools fail)
+    owner_pool_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    owner_pool_user: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    owner_pool_password: Mapped[str | None] = mapped_column(String(255), default="x")
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

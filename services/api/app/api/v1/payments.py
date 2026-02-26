@@ -64,7 +64,7 @@ async def verify_deposit(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Re-verify a pending deposit transaction on BSC."""
+    """Re-verify a pending deposit transaction on Litecoin."""
     try:
         tx = await verify_pending_deposit(db, tx_id, user.id)
         return tx

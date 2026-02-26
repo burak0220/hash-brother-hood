@@ -4,9 +4,9 @@ export function cn(...inputs: ClassValue[]) {
   return clsx(inputs);
 }
 
-export function formatUSDT(amount: number | string): string {
+export function formatLTC(amount: number | string): string {
   const num = typeof amount === 'string' ? parseFloat(amount) : amount;
-  return Math.max(0, isNaN(num) ? 0 : num).toFixed(2);
+  return Math.max(0, isNaN(num) ? 0 : num).toFixed(8);
 }
 
 // Hashrate unit prefixes and multipliers
@@ -122,7 +122,7 @@ export function timeAgo(date: string): string {
 
 export function statusBadgeColor(status: string): string {
   const colors: Record<string, string> = {
-    active: 'bg-neon-cyan/10 text-[#00f0ff] border-[#00f0ff]/20',
+    active: 'bg-green-500/10 text-green-400 border-green-500/20',
     inactive: 'bg-dark-600/30 text-dark-400 border-dark-500/30',
     rented: 'bg-neon-gold/10 text-[#f0b000] border-[#f0b000]/20',
     maintenance: 'bg-neon-gold/10 text-[#f0b000] border-[#f0b000]/20',
@@ -140,11 +140,38 @@ export function transactionTypeColor(type: string): string {
     deposit: 'text-[#00ff88]',
     withdrawal: 'text-[#ff3355]',
     rental_payment: 'text-[#f0b000]',
-    rental_earning: 'text-[#00f0ff]',
+    rental_earning: 'text-primary-400',
     refund: 'text-[#f0b000]',
     fee: 'text-dark-400',
   };
   return colors[type] || 'text-dark-400';
+}
+
+export const REGIONS: Record<string, { flag: string; label: string; short: string }> = {
+  'auto':       { flag: '🌐', label: 'Auto (No preference)', short: 'Auto' },
+  'us-east':    { flag: '🇺🇸', label: 'US East (NY / VA)',   short: 'US East' },
+  'us-west':    { flag: '🇺🇸', label: 'US West (CA / OR)',   short: 'US West' },
+  'us-central': { flag: '🇺🇸', label: 'US Central (TX / IL)', short: 'US Central' },
+  'eu-west':    { flag: '🇪🇺', label: 'EU West (UK / NL)',   short: 'EU West' },
+  'eu-de':      { flag: '🇩🇪', label: 'EU Germany (Frankfurt)', short: 'Germany' },
+  'eu-fi':      { flag: '🇫🇮', label: 'EU Finland (Helsinki)', short: 'Finland' },
+  'eu-fr':      { flag: '🇫🇷', label: 'EU France (Paris)',   short: 'France' },
+  'eu-nl':      { flag: '🇳🇱', label: 'EU Netherlands (Amsterdam)', short: 'Netherlands' },
+  'eu-se':      { flag: '🇸🇪', label: 'EU Sweden (Stockholm)', short: 'Sweden' },
+  'ca':         { flag: '🇨🇦', label: 'Canada',              short: 'Canada' },
+  'asia':       { flag: '🌏', label: 'Asia Pacific',          short: 'Asia' },
+  'asia-sg':    { flag: '🇸🇬', label: 'Asia Pacific (Singapore)', short: 'Singapore' },
+  'asia-jp':    { flag: '🇯🇵', label: 'Asia Pacific (Tokyo)', short: 'Japan' },
+  'asia-hk':    { flag: '🇭🇰', label: 'Asia Pacific (Hong Kong)', short: 'Hong Kong' },
+  'asia-kr':    { flag: '🇰🇷', label: 'Asia Pacific (Seoul)', short: 'Korea' },
+  'au':         { flag: '🇦🇺', label: 'Australia (Sydney)',   short: 'Australia' },
+  'sa':         { flag: '🌎', label: 'South America (São Paulo)', short: 'S. America' },
+  'ru':         { flag: '🇷🇺', label: 'Russia (Moscow)',      short: 'Russia' },
+};
+
+export function regionInfo(region: string | null | undefined): { flag: string; label: string; short: string } {
+  if (!region || region === 'auto') return REGIONS['auto'];
+  return REGIONS[region] || { flag: '🌐', label: region, short: region };
 }
 
 export function truncateAddress(address: string, chars: number = 6): string {

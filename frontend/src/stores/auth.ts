@@ -13,7 +13,7 @@ interface AuthState {
   setUser: (user: User) => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isLoading: true,
   isAuthenticated: false,
@@ -22,6 +22,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     const { data } = await authAPI.login({ email, password, totp_code });
     localStorage.setItem('access_token', data.access_token);
     localStorage.setItem('refresh_token', data.refresh_token);
+    // Signal other tabs that auth changed
+    localStorage.setItem('auth_event', Date.now().toString());
     const { data: user } = await usersAPI.me();
     set({ user, isAuthenticated: true, isLoading: false });
   },
@@ -38,6 +40,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     } finally {
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
+      localStorage.setItem('auth_event', Date.now().toString());
       set({ user: null, isAuthenticated: false, isLoading: false });
     }
   },
@@ -60,3 +63,12 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   setUser: (user) => set({ user }),
 }));
+
+// Cross-tab sync: when another tab logs in/out, refresh this tab's user
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'auth_event') {
+      useAuthStore.getState().fetchUser();
+    }
+  });
+}

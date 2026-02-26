@@ -31,9 +31,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen bg-dark-950 grid-bg">
       <Sidebar />
-      <div className="pl-64">
+      <div className="pl-56 min-w-0 overflow-x-hidden">
         <Header />
-        <main className="p-6">{children}</main>
+        <main className="p-6 min-w-0">{children}</main>
       </div>
     </div>
   );

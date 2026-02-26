@@ -1,10 +1,13 @@
 import math
+from datetime import datetime, timezone
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import require_admin
 from app.models.user import User
@@ -23,7 +26,7 @@ from app.schemas.admin import (
 )
 from app.schemas.payment import TransactionResponse
 from app.schemas.algorithm import AlgorithmResponse
-from app.services.blockchain import send_usdt, get_hot_wallet_balance
+from app.services.blockchain import send_ltc, get_hot_wallet_balance
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -118,25 +121,25 @@ async def approve_withdrawal(
     if not tx or tx.type != "withdrawal" or tx.status != "pending":
         raise HTTPException(status_code=404, detail="Withdrawal not found")
 
-    # Auto-send USDT on BSC
-    bsc_result = await send_usdt(tx.wallet_address, tx.amount)
+    # Send LTC from hot wallet
+    ltc_result = await send_ltc(tx.wallet_address, tx.amount)
 
-    if bsc_result["success"]:
+    if ltc_result["success"]:
         tx.status = "completed"
-        tx.tx_hash = bsc_result["tx_hash"]
-        tx.description = f"Withdrawal of {tx.amount} USDT to {tx.wallet_address} (sent on BSC)"
+        tx.tx_hash = ltc_result["tx_hash"]
+        tx.description = f"Withdrawal of {tx.amount} LTC to {tx.wallet_address}"
 
         log = AdminAuditLog(
             admin_id=admin.id, action="approve_withdrawal",
             entity_type="transaction", entity_id=str(tx_id),
-            details={"tx_hash": bsc_result["tx_hash"]},
+            details={"tx_hash": ltc_result["tx_hash"]},
         )
         db.add(log)
         await db.flush()
-        return {"message": "Withdrawal approved and sent on BSC", "tx_hash": bsc_result["tx_hash"]}
+        return {"message": "Withdrawal approved and sent on Litecoin", "tx_hash": ltc_result["tx_hash"]}
     else:
-        # BSC transfer failed - mark as processing error but keep pending
-        error_msg = bsc_result.get("error", "Unknown error")
+        # LTC transfer failed - keep pending
+        error_msg = ltc_result.get("error", "Unknown error")
         log = AdminAuditLog(
             admin_id=admin.id, action="approve_withdrawal_failed",
             entity_type="transaction", entity_id=str(tx_id),
@@ -146,7 +149,7 @@ async def approve_withdrawal(
         await db.flush()
         raise HTTPException(
             status_code=500,
-            detail=f"BSC transfer failed: {error_msg}. Withdrawal remains pending.",
+            detail=f"LTC transfer failed: {error_msg}. Withdrawal remains pending.",
         )
 
 
@@ -357,19 +360,62 @@ async def admin_cancel_rental(
     if rental.status not in ("active", "pending"):
         raise HTTPException(status_code=400, detail=f"Cannot cancel rental with status: {rental.status}")
 
+    now = datetime.now(timezone.utc)
+
+    # Use escrow_amount (original cost only — extensions already settled to owner)
+    escrow = rental.escrow_amount or rental.total_cost
+    renter_fee_pct = Decimal(str(settings.RENTER_FEE_PERCENT)) / Decimal("100")
+    original_renter_fee = (escrow * renter_fee_pct).quantize(Decimal("0.01"))
+
+    if rental.status == "active" and rental.started_at:
+        original_duration_hours = rental.original_duration_hours or rental.duration_hours or 0
+        original_total_seconds = original_duration_hours * 3600
+        used_seconds = max((now - rental.started_at).total_seconds(), 0)
+        if original_total_seconds > 0 and used_seconds < original_total_seconds:
+            unused_ratio = max(Decimal(str(1 - used_seconds / original_total_seconds)), Decimal("0"))
+        else:
+            unused_ratio = Decimal("0")
+        refund_amount = (escrow * unused_ratio).quantize(Decimal("0.01"))
+        fee_refund = (original_renter_fee * unused_ratio).quantize(Decimal("0.01"))
+    else:
+        refund_amount = escrow
+        fee_refund = original_renter_fee
+
+    total_refund = refund_amount + fee_refund
+
     rental.status = "cancelled"
-    # Refund renter
+    rental.cancelled_at = now
+
+    # Refund renter (unused escrow + proportional fee)
     renter = (await db.execute(select(User).where(User.id == rental.renter_id))).scalar_one()
-    renter.balance += rental.total_cost
-    # Create refund transaction
+    renter.balance += total_refund
     refund_tx = Transaction(
-        user_id=rental.renter_id, type="refund", amount=rental.total_cost,
+        user_id=rental.renter_id, type="refund", amount=total_refund,
         status="completed", description=f"Admin refund for rental #{rental_id}",
     )
     db.add(refund_tx)
+
+    # Pay owner for delivered portion (from escrow only)
+    fee_percent = Decimal(str(settings.PLATFORM_FEE_PERCENT)) / Decimal("100")
+    used_amount = escrow - refund_amount
+    if used_amount > Decimal("0.00"):
+        platform_fee = (used_amount * fee_percent).quantize(Decimal("0.01"))
+        owner_earning = used_amount - platform_fee
+        owner = (await db.execute(select(User).where(User.id == rental.owner_id))).scalar_one()
+        owner.balance += owner_earning
+        db.add(Transaction(
+            user_id=rental.owner_id, type="rental_earning", amount=owner_earning,
+            status="completed", description=f"Partial earning for admin-cancelled rental #{rental_id}",
+        ))
+
+    # Restore rig status
+    rig = (await db.execute(select(Rig).where(Rig.id == rental.rig_id))).scalar_one_or_none()
+    if rig:
+        rig.status = "active"
+
     log = AdminAuditLog(
         admin_id=admin.id, action="cancel_rental", entity_type="rental", entity_id=str(rental_id),
-        details={"refund_amount": float(rental.total_cost)},
+        details={"refund_amount": float(total_refund)},
     )
     db.add(log)
     await db.flush()
@@ -501,7 +547,7 @@ async def list_audit_logs(
 
 @router.get("/wallet-balance")
 async def admin_wallet_balance(admin: User = Depends(require_admin)):
-    """Get hot wallet USDT and BNB balances on BSC."""
+    """Get hot wallet LTC balance."""
     try:
         balances = await get_hot_wallet_balance()
         return balances
@@ -529,6 +575,7 @@ async def list_all_disputes(
         {
             "id": d.id,
             "rental_id": d.rental_id,
+            "rig_id": d.rental.rig_id if d.rental else None,
             "opened_by": d.opened_by,
             "opener_username": d.opener.username if d.opener else None,
             "reason": d.reason,
@@ -538,6 +585,137 @@ async def list_all_disputes(
         }
         for d in disputes
     ]
+
+
+@router.get("/disputes/{dispute_id}")
+async def get_dispute_detail(
+    dispute_id: int,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Dispute).options(
+            selectinload(Dispute.opener),
+            selectinload(Dispute.rental),
+            selectinload(Dispute.messages).selectinload(DisputeMessage.sender),
+        ).where(Dispute.id == dispute_id)
+    )
+    d = result.scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Dispute not found")
+    return {
+        "id": d.id, "rental_id": d.rental_id,
+        "rig_id": d.rental.rig_id if d.rental else None,
+        "opened_by": d.opened_by,
+        "opener_username": d.opener.username if d.opener else None,
+        "reason": d.reason, "status": d.status, "resolution": d.resolution,
+        "created_at": d.created_at,
+        "messages": [
+            {"id": m.id, "sender": m.sender.username if m.sender else "?", "sender_id": m.sender_id,
+             "content": m.content, "created_at": m.created_at}
+            for m in d.messages
+        ],
+    }
+
+
+@router.post("/disputes/{dispute_id}/message")
+async def admin_dispute_message(
+    dispute_id: int,
+    data: dict,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Dispute).where(Dispute.id == dispute_id))
+    dispute = result.scalar_one_or_none()
+    if not dispute:
+        raise HTTPException(status_code=404, detail="Dispute not found")
+    msg = DisputeMessage(dispute_id=dispute_id, sender_id=admin.id, content=data.get("content", ""))
+    db.add(msg)
+    await db.commit()
+    return {"message": "Reply sent"}
+
+
+@router.post("/disputes/{dispute_id}/resolve")
+async def admin_resolve_dispute(
+    dispute_id: int,
+    data: dict,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Dispute).where(Dispute.id == dispute_id))
+    dispute = result.scalar_one_or_none()
+    if not dispute:
+        raise HTTPException(status_code=404, detail="Dispute not found")
+    if dispute.status == "resolved":
+        raise HTTPException(status_code=400, detail="Already resolved")
+
+    action = data.get("action", "resolve")  # resolve, refund_renter, refund_owner
+    resolution = data.get("resolution", "")
+    refund_amount = Decimal(str(data.get("refund_amount", 0)))
+
+    dispute.status = "resolved"
+    dispute.resolution = resolution
+    dispute.resolved_by = admin.id
+    dispute.resolved_at = datetime.now(timezone.utc)
+
+    # Handle refund if specified
+    if action == "refund_renter" and refund_amount > 0:
+        rental_result = await db.execute(select(Rental).where(Rental.id == dispute.rental_id))
+        rental = rental_result.scalar_one_or_none()
+        if rental:
+            renter = await db.get(User, rental.renter_id)
+            if renter:
+                renter.balance += refund_amount
+                db.add(Transaction(
+                    user_id=renter.id, type="dispute_refund", amount=refund_amount,
+                    status="completed", description=f"Dispute #{dispute_id} refund: {resolution}",
+                ))
+
+    db.add(AdminAuditLog(admin_id=admin.id, action="resolve_dispute",
+                    entity_type="dispute", entity_id=str(dispute_id),
+                    details=f"Action: {action}, Resolution: {resolution}"))
+
+    return {"message": f"Dispute resolved: {resolution}"}
+
+
+@router.get("/pending-actions")
+async def get_pending_actions(
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get counts of all pending admin actions."""
+    from sqlalchemy import func as sqlfunc
+
+    pending_withdrawals = (await db.execute(
+        select(sqlfunc.count()).select_from(Transaction).where(Transaction.type == "withdrawal", Transaction.status == "pending")
+    )).scalar() or 0
+
+    pending_disputes = (await db.execute(
+        select(sqlfunc.count()).select_from(Dispute).where(Dispute.status == "open")
+    )).scalar() or 0
+
+    pending_escrows = (await db.execute(
+        select(sqlfunc.count()).select_from(Rental).where(
+            Rental.status == "completed", Rental.reviewed_at.is_(None), Rental.escrow_released.is_(False)
+        )
+    )).scalar() or 0
+
+    open_tickets = 0
+    try:
+        from app.models.support_ticket import SupportTicket
+        open_tickets = (await db.execute(
+            select(sqlfunc.count()).select_from(SupportTicket).where(SupportTicket.status == "open")
+        )).scalar() or 0
+    except Exception:
+        pass
+
+    return {
+        "pending_withdrawals": pending_withdrawals,
+        "pending_disputes": pending_disputes,
+        "pending_escrows": pending_escrows,
+        "open_tickets": open_tickets,
+        "total": pending_withdrawals + pending_disputes + pending_escrows + open_tickets,
+    }
 
 
 ## ========== SETTINGS ==========
@@ -629,11 +807,7 @@ async def approve_cancellation(
     """
     from app.models.cancellation_request import CancellationRequest
     from app.services.hashrate import get_hashrate_stats
-    from app.services.rental import cancel_rental
-    from datetime import datetime, timezone
-    from decimal import Decimal
-    from app.core.config import settings
-    
+
     result = await db.execute(
         select(CancellationRequest)
         .options(selectinload(CancellationRequest.rental))
@@ -656,56 +830,47 @@ async def approve_cancellation(
     stats = await get_hashrate_stats(db, rental.id, hours=24)
     avg_performance = stats.get("avg_percentage") or 100.0  # Default to 100% if no data
     
-    # Calculate refund
-    total_seconds = max((rental.ends_at - rental.started_at).total_seconds(), 1)
+    # Use escrow_amount (original cost only — extensions already settled to owner)
+    escrow = rental.escrow_amount or rental.total_cost
+    original_duration_hours = rental.original_duration_hours or rental.duration_hours or 0
+    original_total_seconds = max(original_duration_hours * 3600, 1)
     used_seconds = max((now - rental.started_at).total_seconds(), 0)
-    used_ratio = min(Decimal(str(used_seconds / total_seconds)), Decimal("1"))
+    used_ratio = min(Decimal(str(used_seconds / original_total_seconds)), Decimal("1"))
     unused_ratio = Decimal("1") - used_ratio
-    
-    # Unused time: Full refund
-    unused_refund = (rental.total_cost * unused_ratio).quantize(Decimal("0.01"))
-    
-    # Used time: Refund based on performance loss
-    performance_ratio = Decimal(str(avg_performance / 100.0))  # e.g., 0.65
-    performance_loss = Decimal("1") - performance_ratio  # e.g., 0.35
-    used_refund = (rental.total_cost * used_ratio * performance_loss).quantize(Decimal("0.01"))
-    
+
+    # Unused time: full refund from escrow
+    unused_refund = (escrow * unused_ratio).quantize(Decimal("0.01"))
+
+    # Used time: performance-adjusted refund (e.g. 35% refund if 65% performance)
+    performance_ratio = Decimal(str(avg_performance / 100.0))
+    performance_loss = Decimal("1") - performance_ratio
+    used_refund = (escrow * used_ratio * performance_loss).quantize(Decimal("0.01"))
+
     total_refund = unused_refund + used_refund
-    
-    # Owner deduction (includes platform fee loss)
+
     fee_percent = Decimal(str(settings.PLATFORM_FEE_PERCENT)) / Decimal("100")
-    owner_deduct = total_refund  # Owner loses full refund amount (including platform fee)
-    
-    # Process refund
-    renter = await db.execute(select(User).where(User.id == rental.renter_id))
-    renter = renter.scalar_one()
+
+    # Refund renter from escrow
+    renter = (await db.execute(select(User).where(User.id == rental.renter_id))).scalar_one()
     renter.balance += total_refund
-    
-    tx_renter = Transaction(
+    db.add(Transaction(
         user_id=renter.id, type="refund", amount=total_refund,
         status="completed",
         description=f"Cancellation approved: {avg_performance:.1f}% avg hashrate (Request #{req.id})"
-    )
-    db.add(tx_renter)
-    
-    # Deduct from owner
-    owner = await db.execute(select(User).where(User.id == rental.owner_id))
-    owner = owner.scalar_one()
-    
-    if owner.balance < owner_deduct:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Owner has insufficient balance (has {float(owner.balance)}, needs {float(owner_deduct)})"
-        )
-    
-    owner.balance -= owner_deduct
-    
-    tx_owner = Transaction(
-        user_id=owner.id, type="refund", amount=owner_deduct,
-        status="completed",
-        description=f"Cancellation deduction: {avg_performance:.1f}% avg hashrate (Request #{req.id})"
-    )
-    db.add(tx_owner)
+    ))
+
+    # Pay owner their performance-adjusted earned portion from escrow (they never received it yet)
+    owner_earned = (escrow * used_ratio * performance_ratio).quantize(Decimal("0.01"))
+    platform_fee = (owner_earned * fee_percent).quantize(Decimal("0.01"))
+    owner_earning = owner_earned - platform_fee
+    owner = (await db.execute(select(User).where(User.id == rental.owner_id))).scalar_one()
+    if owner_earning > Decimal("0.00"):
+        owner.balance += owner_earning
+        db.add(Transaction(
+            user_id=owner.id, type="rental_earning", amount=owner_earning,
+            status="completed",
+            description=f"Partial earning for cancellation-approved rental #{rental.id} ({avg_performance:.1f}% hashrate)"
+        ))
     
     # Update rental status
     rental.status = "cancelled"
@@ -759,18 +924,17 @@ async def reject_cancellation(
 ):
     """Reject cancellation request."""
     from app.models.cancellation_request import CancellationRequest
-    from datetime import datetime, timezone
-    
+
     result = await db.execute(
         select(CancellationRequest).where(CancellationRequest.id == request_id)
     )
     req = result.scalar_one_or_none()
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
-    
+
     if req.status != "pending":
         raise HTTPException(status_code=400, detail=f"Request already {req.status}")
-    
+
     req.status = "rejected"
     req.reviewed_by = admin.id
     req.reviewed_at = datetime.now(timezone.utc)
@@ -785,3 +949,286 @@ async def reject_cancellation(
     await db.flush()
     
     return {"message": "Cancellation request rejected"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Sprint 2: Granular Admin Controls
+# ═══════════════════════════════════════════════════════════════════════════════
+
+from app.schemas.admin import AdminRPIOverride, AdminRentalReview, AdminRigCorrection
+
+
+@router.post("/rigs/{rig_id}/rpi-override")
+async def override_rig_rpi(
+    rig_id: int,
+    data: AdminRPIOverride,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Manually override a rig's RPI score."""
+    rig = await db.get(Rig, rig_id)
+    if not rig:
+        raise HTTPException(status_code=404, detail="Rig not found.")
+
+    old_rpi = float(rig.rpi_score)
+    rig.rpi_score = data.rpi_score
+    await db.flush()
+
+    log = AdminAuditLog(
+        admin_id=admin.id, action="rpi_override",
+        entity_type="rig", entity_id=str(rig_id),
+        details={"old_rpi": old_rpi, "new_rpi": float(data.rpi_score), "reason": data.reason},
+    )
+    db.add(log)
+    await db.commit()
+
+    return {
+        "message": f"RPI updated from {old_rpi:.1f} to {float(data.rpi_score):.1f}",
+        "rig_id": rig_id,
+        "old_rpi": old_rpi,
+        "new_rpi": float(data.rpi_score),
+    }
+
+
+@router.post("/rigs/{rig_id}/correct")
+async def correct_rig(
+    rig_id: int,
+    data: AdminRigCorrection,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin correction of rig hashrate or status."""
+    rig = await db.get(Rig, rig_id)
+    if not rig:
+        raise HTTPException(status_code=404, detail="Rig not found.")
+
+    changes = {}
+    if data.hashrate is not None:
+        changes["old_hashrate"] = float(rig.hashrate)
+        rig.hashrate = data.hashrate
+        changes["new_hashrate"] = float(data.hashrate)
+    if data.status is not None:
+        changes["old_status"] = rig.status
+        rig.status = data.status
+        changes["new_status"] = data.status
+
+    changes["reason"] = data.reason
+    await db.flush()
+
+    log = AdminAuditLog(
+        admin_id=admin.id, action="rig_correction",
+        entity_type="rig", entity_id=str(rig_id),
+        details=changes,
+    )
+    db.add(log)
+    await db.commit()
+
+    return {"message": "Rig corrected.", "changes": changes}
+
+
+@router.post("/rentals/{rental_id}/review")
+async def admin_review_rental(
+    rental_id: int,
+    data: AdminRentalReview,
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Admin review of a completed rental.
+    Actions: approve_refund, reject_refund, adjust_refund, force_refund
+    """
+    from decimal import Decimal
+    from app.core.config import settings
+
+    result = await db.execute(select(Rental).where(Rental.id == rental_id))
+    rental = result.scalar_one_or_none()
+    if not rental:
+        raise HTTPException(status_code=404, detail="Rental not found.")
+
+    if rental.status not in ("completed", "cancelled"):
+        raise HTTPException(status_code=400, detail="Only completed or cancelled rentals can be reviewed.")
+
+    response_msg = ""
+
+    if data.action == "approve_refund":
+        # Approve and release escrow immediately
+        rental.reviewed_by = admin.id
+        from datetime import datetime, timezone
+        rental.reviewed_at = datetime.now(timezone.utc)
+
+        # Release escrow if not already released
+        if not rental.escrow_released:
+            escrow = rental.escrow_amount or rental.total_cost
+            fee_pct = Decimal(str(settings.PLATFORM_FEE_PERCENT)) / Decimal("100")
+            perf = float(rental.performance_percent) if rental.performance_percent is not None else 100.0
+
+            refund = Decimal("0")
+            if perf < 95.0:
+                missing_pct = (100.0 - perf) / 100.0
+                refund = Decimal(str(round(float(escrow) * missing_pct, 2)))
+                if refund < Decimal("0.01"):
+                    refund = Decimal("0")
+
+            owner_amount = escrow - refund
+            platform_fee = owner_amount * fee_pct
+            owner_earning = owner_amount - platform_fee
+
+            # Pay owner
+            if owner_earning > 0:
+                owner = await db.get(User, rental.owner_id)
+                if owner:
+                    owner.balance += owner_earning
+                    db.add(Transaction(
+                        user_id=owner.id, type="escrow_release", amount=owner_earning,
+                        status="completed",
+                        description=f"Admin approved escrow for rental #{rental.id} ({perf:.1f}% delivery)"
+                    ))
+
+            # Refund renter if needed
+            if refund > 0:
+                rental.refund_amount = refund
+                rental.refund_reason = f"Auto-refund: {perf:.1f}% hashrate delivery"
+                renter = await db.get(User, rental.renter_id)
+                if renter:
+                    renter.balance += refund
+                    db.add(Transaction(
+                        user_id=renter.id, type="refund", amount=refund,
+                        status="completed",
+                        description=f"Refund for rental #{rental.id}: {perf:.1f}% delivery"
+                    ))
+
+            rental.escrow_released = True
+            rental.escrow_released_at = datetime.now(timezone.utc)
+            response_msg = f"Escrow released. Owner earned {float(owner_earning):.2f} LTC" + (f", renter refunded {float(refund):.2f} LTC" if refund > 0 else "") + "."
+        else:
+            response_msg = f"Escrow already released. Marked as reviewed."
+
+    elif data.action == "reject_refund":
+        # Reject refund — reverse the refund if it was already given
+        if rental.refund_amount and float(rental.refund_amount) > 0:
+            # Reverse: deduct from renter, add back to owner
+            renter = await db.get(User, rental.renter_id)
+            owner = await db.get(User, rental.owner_id)
+            refund_amt = rental.refund_amount
+
+            if renter and renter.balance >= refund_amt:
+                renter.balance -= refund_amt
+                fee_pct = Decimal(str(settings.PLATFORM_FEE_PERCENT)) / Decimal("100")
+                owner_portion = refund_amt * (1 - fee_pct)
+                if owner:
+                    owner.balance += owner_portion
+
+                tx_renter = Transaction(
+                    user_id=renter.id, type="refund_reversal", amount=refund_amt,
+                    status="completed", description=f"Admin rejected refund for rental #{rental_id}",
+                )
+                db.add(tx_renter)
+                if owner:
+                    tx_owner = Transaction(
+                        user_id=owner.id, type="refund_reversal", amount=owner_portion,
+                        status="completed", description=f"Refund reversed for rental #{rental_id}",
+                    )
+                    db.add(tx_owner)
+
+            old_amount = float(rental.refund_amount)
+            rental.refund_amount = Decimal("0")
+            rental.refund_reason = f"Admin rejected: {data.reason}" if data.reason else "Admin rejected refund"
+            response_msg = f"Refund of {old_amount:.2f} LTC rejected and reversed."
+        else:
+            response_msg = "No refund to reject."
+
+        rental.reviewed_by = admin.id
+        from datetime import datetime, timezone
+        rental.reviewed_at = datetime.now(timezone.utc)
+
+    elif data.action == "adjust_refund":
+        if data.refund_amount is None:
+            raise HTTPException(status_code=400, detail="refund_amount required for adjust_refund.")
+
+        old_amount = rental.refund_amount or Decimal("0")
+        new_amount = data.refund_amount
+        diff = new_amount - old_amount
+
+        renter = await db.get(User, rental.renter_id)
+        owner = await db.get(User, rental.owner_id)
+        fee_pct = Decimal(str(settings.PLATFORM_FEE_PERCENT)) / Decimal("100")
+
+        if diff > 0:
+            # Increase refund — give more to renter, take from owner
+            owner_deduct = diff * (1 - fee_pct)
+            if renter:
+                renter.balance += diff
+                db.add(Transaction(
+                    user_id=renter.id, type="refund_adjustment", amount=diff,
+                    status="completed", description=f"Admin adjusted refund for rental #{rental_id} (+{float(diff):.2f})",
+                ))
+            if owner and owner.balance >= owner_deduct:
+                owner.balance -= owner_deduct
+                db.add(Transaction(
+                    user_id=owner.id, type="refund_adjustment", amount=owner_deduct,
+                    status="completed", description=f"Admin refund adjustment for rental #{rental_id}",
+                ))
+        elif diff < 0:
+            # Decrease refund — take from renter, give back to owner
+            take_back = abs(diff)
+            owner_return = take_back * (1 - fee_pct)
+            if renter and renter.balance >= take_back:
+                renter.balance -= take_back
+                db.add(Transaction(
+                    user_id=renter.id, type="refund_adjustment", amount=take_back,
+                    status="completed", description=f"Admin reduced refund for rental #{rental_id} (-{float(take_back):.2f})",
+                ))
+            if owner:
+                owner.balance += owner_return
+                db.add(Transaction(
+                    user_id=owner.id, type="refund_adjustment", amount=owner_return,
+                    status="completed", description=f"Admin refund reduction for rental #{rental_id}",
+                ))
+
+        rental.refund_amount = new_amount
+        rental.refund_reason = f"Admin adjusted: {data.reason}" if data.reason else f"Admin adjusted to {float(new_amount):.2f}"
+        rental.reviewed_by = admin.id
+        from datetime import datetime, timezone
+        rental.reviewed_at = datetime.now(timezone.utc)
+        response_msg = f"Refund adjusted from {float(old_amount):.2f} to {float(new_amount):.2f} LTC."
+
+    elif data.action == "force_refund":
+        if data.refund_amount is None:
+            raise HTTPException(status_code=400, detail="refund_amount required for force_refund.")
+
+        renter = await db.get(User, rental.renter_id)
+        owner = await db.get(User, rental.owner_id)
+        fee_pct = Decimal(str(settings.PLATFORM_FEE_PERCENT)) / Decimal("100")
+
+        refund = data.refund_amount
+        owner_deduct = refund * (1 - fee_pct)
+
+        if renter:
+            renter.balance += refund
+            db.add(Transaction(
+                user_id=renter.id, type="admin_refund", amount=refund,
+                status="completed", description=f"Admin forced refund for rental #{rental_id}",
+            ))
+        if owner and owner.balance >= owner_deduct:
+            owner.balance -= owner_deduct
+            db.add(Transaction(
+                user_id=owner.id, type="admin_refund", amount=owner_deduct,
+                status="completed", description=f"Admin forced refund deduction for rental #{rental_id}",
+            ))
+
+        rental.refund_amount = (rental.refund_amount or Decimal("0")) + refund
+        rental.refund_reason = f"Admin forced: {data.reason}" if data.reason else "Admin forced refund"
+        rental.reviewed_by = admin.id
+        from datetime import datetime, timezone
+        rental.reviewed_at = datetime.now(timezone.utc)
+        response_msg = f"Forced refund of {float(refund):.2f} LTC applied."
+
+    log = AdminAuditLog(
+        admin_id=admin.id, action=f"rental_review_{data.action}",
+        entity_type="rental", entity_id=str(rental_id),
+        details={"action": data.action, "refund_amount": float(data.refund_amount) if data.refund_amount else None, "reason": data.reason},
+    )
+    db.add(log)
+    await db.commit()
+
+    return {"message": response_msg, "rental_id": rental_id}

@@ -1,79 +1,49 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 80" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 56" fill="none">
   <defs>
-    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#00e5ff"/>
-      <stop offset="100%" stop-color="#0070ff"/>
+    <linearGradient id="lg-gr" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fb923c"/>
+      <stop offset="100%" stop-color="#c2410c"/>
     </linearGradient>
-    <linearGradient id="accentV" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#00e5ff"/>
-      <stop offset="100%" stop-color="#0055dd"/>
+    <linearGradient id="lg-text" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#fb923c"/>
+      <stop offset="100%" stop-color="#f97316"/>
     </linearGradient>
-    <linearGradient id="white" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#f0f8ff"/>
-      <stop offset="100%" stop-color="#ffffff"/>
-    </linearGradient>
-    <linearGradient id="dim" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#7ab0cc"/>
-      <stop offset="100%" stop-color="#5090b0"/>
-    </linearGradient>
-    <filter id="g" x="-8%" y="-8%" width="116%" height="116%">
-      <feGaussianBlur stdDeviation="1" result="b"/>
-      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-    <filter id="ig" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="1.5" result="b"/>
-      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-    <filter id="bg" x="-80%" y="-80%" width="260%" height="260%">
-      <feGaussianBlur stdDeviation="10"/>
-    </filter>
   </defs>
 
-  <!-- === ICON: # integrated into a rounded square === -->
-  <g transform="translate(6, 8)">
-    <!-- Ambient glow -->
-    <rect x="4" y="4" width="56" height="56" rx="16" fill="#00c0ff" opacity="0.07" filter="url(#bg)"/>
+  <!-- Icon: 52x52 area, centered in 56px height with 2px padding -->
+  <g transform="translate(0, 2)">
 
-    <!-- Container -->
-    <rect x="4" y="4" width="56" height="56" rx="14" fill="none" stroke="url(#accent)" stroke-width="2" opacity="0.5"/>
-    <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#accentV)" opacity="0.06"/>
+    <!-- Hexagonal frame -->
+    <polygon points="26,3 46,14 46,38 26,49 6,38 6,14"
+             fill="url(#lg-gr)" fill-opacity="0.1"
+             stroke="url(#lg-gr)" stroke-width="2" opacity="0.85"/>
 
-    <!-- # Hash symbol - bold, modern, slightly rounded -->
-    <g filter="url(#ig)">
-      <!-- Verticals - slightly tilted for dynamism -->
-      <rect x="23" y="12" width="4.5" height="40" rx="2.2" fill="url(#accent)" transform="rotate(-6, 25, 32)"/>
-      <rect x="37" y="12" width="4.5" height="40" rx="2.2" fill="url(#accent)" transform="rotate(-6, 39, 32)"/>
-      <!-- Horizontals -->
-      <rect x="11" y="23" width="42" height="4" rx="2" fill="url(#accent)" opacity="0.9"/>
-      <rect x="11" y="36" width="42" height="4" rx="2" fill="url(#accent)" opacity="0.9"/>
-    </g>
+    <!-- Pickaxe HEAD — simple solid polygon
+         Spike points upper-left (sharp), adze points upper-right (flat).
+         All corners explicit — no curves that can misrender. -->
+    <polygon
+      points="7,14 19,10 26,9 40,13 42,20 29,25 25,22 19,27 10,22 7,17"
+      fill="url(#lg-gr)"/>
+
+    <!-- Pickaxe HANDLE — diagonal parallelogram going lower-right -->
+    <polygon
+      points="19,27 25,22 39,38 35,43"
+      fill="url(#lg-gr)"/>
+
   </g>
 
-  <!-- === WORDMARK === -->
-  <g transform="translate(78, 0)">
-
-    <!-- hashbrotherhood - unified, lowercase, modern -->
-    <!-- "hash" part - white/light -->
-    <text y="43" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif"
-          font-size="34" font-weight="800" letter-spacing="-1.5" fill="url(#white)">hash</text>
-
-    <!-- "brother" part - cyan gradient accent -->
-    <text x="82" y="43" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif"
-          font-size="34" font-weight="800" letter-spacing="-1.5" fill="url(#accent)" filter="url(#g)">brother</text>
-
-    <!-- "hood" part - white/light -->
-    <text x="220" y="43" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif"
-          font-size="34" font-weight="800" letter-spacing="-1.5" fill="url(#white)">hood</text>
-
-    <!-- Accent dot between sections - subtle -->
-    <circle cx="80" cy="43" r="1.8" fill="#00e5ff" opacity="0.4"/>
-    <circle cx="218" cy="43" r="1.8" fill="#00e5ff" opacity="0.4"/>
-
-    <!-- Tagline -->
-    <text y="62" font-family="'Inter', 'Helvetica Neue', Arial, sans-serif"
-          font-size="9" fill="url(#dim)" letter-spacing="4.5" font-weight="600" text-transform="uppercase">HASHRATE MARKETPLACE</text>
-
-    <!-- Underline accent -->
-    <rect y="48" width="70" height="1.5" rx="0.75" fill="url(#accent)" opacity="0.25"/>
+  <!-- Wordmark: HASH·BROTHER·HOOD on one line -->
+  <g transform="translate(62, 0)">
+    <text y="34"
+          font-family="'Inter','SF Pro Display','Segoe UI',sans-serif"
+          font-size="28" font-weight="900" letter-spacing="-0.5">
+      <tspan fill="#ffffff">HASH</tspan><tspan fill="url(#lg-text)">BROTHER</tspan><tspan fill="#ffffff">HOOD</tspan>
+    </text>
+    <text y="50"
+          font-family="'Inter','SF Pro','Segoe UI',sans-serif"
+          font-size="8" fill="#6a6a6a" letter-spacing="3.5" font-weight="600">
+      HASHRATE MARKETPLACE
+    </text>
   </g>
+
 </svg>

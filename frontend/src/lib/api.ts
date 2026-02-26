@@ -1,9 +1,9 @@
 import axios from 'axios';
 import type {
-  User, Algorithm, Rig, RigListResponse, Rental, RentalListResponse,
+  User, Algorithm, Rig, RigListResponse, Rental, RentalListResponse, RentalConversation,
   Transaction, TransactionListResponse, Notification, NotificationListResponse,
   Review, TokenResponse, AdminStats, PlatformSetting, MessageItem, Conversation,
-  Dispute,
+  Dispute, PoolProfile, RentalMessage,
 } from '@/types';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
@@ -116,6 +116,25 @@ export const usersAPI = {
   changePassword: (data: { current_password: string; new_password: string }) =>
     api.post('/users/me/password', data),
   earnings: () => api.get<{ date: string; earnings: number }[]>('/users/me/earnings'),
+  // Pool Profiles
+  poolProfiles: () => api.get<PoolProfile[]>('/users/me/pool-profiles'),
+  createPoolProfile: (data: {
+    name: string; algorithm_id?: number; pool_url: string; pool_user: string; pool_password?: string; is_default?: boolean;
+    pool2_url?: string; pool2_user?: string; pool2_password?: string;
+    pool3_url?: string; pool3_user?: string; pool3_password?: string;
+    pool4_url?: string; pool4_user?: string; pool4_password?: string;
+    pool5_url?: string; pool5_user?: string; pool5_password?: string;
+  }) =>
+    api.post<PoolProfile>('/users/me/pool-profiles', data),
+  updatePoolProfile: (id: number, data: Partial<{
+    name: string; algorithm_id: number; pool_url: string; pool_user: string; pool_password: string; is_default: boolean;
+    pool2_url: string; pool2_user: string; pool2_password: string;
+    pool3_url: string; pool3_user: string; pool3_password: string;
+    pool4_url: string; pool4_user: string; pool4_password: string;
+    pool5_url: string; pool5_user: string; pool5_password: string;
+  }>) =>
+    api.put<PoolProfile>(`/users/me/pool-profiles/${id}`, data),
+  deletePoolProfile: (id: number) => api.delete(`/users/me/pool-profiles/${id}`),
 };
 
 // Algorithms
@@ -129,8 +148,12 @@ export const algorithmsAPI = {
 export const rigsAPI = {
   marketplace: (params?: Record<string, any>) =>
     api.get<RigListResponse>('/rigs/marketplace', { params }),
+  algoStats: () => api.get<Record<string, number>>('/rigs/algo-stats'),
   myRigs: () => api.get<Rig[]>('/rigs/my-rigs'),
   get: (id: number) => api.get<Rig>(`/rigs/${id}`),
+  hashrateHistory: (id: number, hours?: number) => api.get(`/rigs/${id}/hashrate-history`, { params: { hours } }),
+  bulkUpdate: (data: { rig_ids: number[]; price_per_hour?: number; status?: string; min_rental_hours?: number; max_rental_hours?: number }) =>
+    api.post('/rigs/bulk-update', data),
   create: (data: any) => api.post<Rig>('/rigs', data),
   update: (id: number, data: any) => api.put<Rig>(`/rigs/${id}`, data),
   delete: (id: number) => api.delete(`/rigs/${id}`),
@@ -138,12 +161,39 @@ export const rigsAPI = {
 
 // Rentals
 export const rentalsAPI = {
-  create: (data: { rig_id: number; duration_hours: number; pool_url: string; pool_user: string; pool_password?: string }) =>
-    api.post<Rental>('/rentals', data),
+  create: (data: {
+    rig_id: number; duration_hours: number;
+    pool_url: string; pool_user: string; pool_password?: string;
+    pool2_url?: string; pool2_user?: string; pool2_password?: string;
+    pool3_url?: string; pool3_user?: string; pool3_password?: string;
+    pool4_url?: string; pool4_user?: string; pool4_password?: string;
+    pool5_url?: string; pool5_user?: string; pool5_password?: string;
+  }) => api.post<Rental>('/rentals', data),
   list: (params?: { role?: string; page?: number; per_page?: number }) =>
     api.get<RentalListResponse>('/rentals', { params }),
   get: (id: number) => api.get<Rental>(`/rentals/${id}`),
   cancel: (id: number) => api.post<Rental>(`/rentals/${id}/cancel`),
+  extend: (id: number, hours: number) => api.post(`/rentals/${id}/extend`, { hours }),
+  updatePool: (id: number, data: {
+    pool_url: string; pool_user: string; pool_password?: string;
+    pool2_url?: string; pool2_user?: string; pool2_password?: string;
+    pool3_url?: string; pool3_user?: string; pool3_password?: string;
+    pool4_url?: string; pool4_user?: string; pool4_password?: string;
+    pool5_url?: string; pool5_user?: string; pool5_password?: string;
+  }) => api.put(`/rentals/${id}/pool`, data),
+  conversations: () => api.get<RentalConversation[]>('/rentals/conversations'),
+  getMessages: (id: number) => api.get<RentalMessage[]>(`/rentals/${id}/messages`),
+  sendMessage: (id: number, content: string) => api.post<RentalMessage>(`/rentals/${id}/messages`, { content }),
+  hashrateStats: (id: number, hours?: number) => api.get(`/rentals/${id}/hashrate-stats`, { params: { hours } }),
+  massRent: (data: {
+    rig_ids: number[]; duration_hours: number;
+    pool_url: string; pool_user: string; pool_password?: string;
+    pool2_url?: string; pool2_user?: string; pool2_password?: string;
+    pool3_url?: string; pool3_user?: string; pool3_password?: string;
+    pool4_url?: string; pool4_user?: string; pool4_password?: string;
+    pool5_url?: string; pool5_user?: string; pool5_password?: string;
+  }) => api.post('/rentals/mass-rent', data),
+  ownerStats: () => api.get('/rentals/owner-stats/me'),
 };
 
 // Payments
@@ -238,13 +288,38 @@ export const adminAPI = {
   auditLogs: (params?: { page?: number; per_page?: number }) =>
     api.get('/admin/audit-logs', { params }),
   // Hot Wallet
-  walletBalance: () => api.get<{ usdt_balance: number; bnb_balance: number }>('/admin/wallet-balance'),
+  walletBalance: () => api.get<{ ltc_balance: number }>('/admin/wallet-balance'),
   // Disputes
   disputes: (status?: string) => api.get('/admin/disputes', { params: { status } }),
+  disputeDetail: (id: number) => api.get(`/admin/disputes/${id}`),
+  disputeMessage: (id: number, content: string) => api.post(`/admin/disputes/${id}/message`, { content }),
+  resolveDispute: (id: number, data: { action: string; resolution: string; refund_amount?: number }) =>
+    api.post(`/admin/disputes/${id}/resolve`, data),
+  pendingActions: () => api.get<{ pending_withdrawals: number; pending_disputes: number; pending_escrows: number; open_tickets: number; total: number }>('/admin/pending-actions'),
+  // Sprint 2: Granular controls
+  overrideRPI: (rigId: number, data: { rpi_score: number; reason: string }) =>
+    api.post(`/admin/rigs/${rigId}/rpi-override`, data),
+  correctRig: (rigId: number, data: { hashrate?: number; status?: string; reason: string }) =>
+    api.post(`/admin/rigs/${rigId}/correct`, data),
+  reviewRental: (rentalId: number, data: { action: string; refund_amount?: number; reason?: string }) =>
+    api.post(`/admin/rentals/${rentalId}/review`, data),
   // Settings
   settings: () => api.get<PlatformSetting[]>('/admin/settings'),
   updateSetting: (key: string, value: string) =>
     api.put<PlatformSetting>(`/admin/settings/${key}`, { value }),
+  // Support tickets (admin)
+  supportTickets: (status?: string) => api.get('/support/admin/all', { params: { status } }),
+  resolveTicket: (ticketId: number) => api.post(`/support/${ticketId}/resolve`),
+  addSupportMessage: (ticketId: number, message: string) => api.post(`/support/${ticketId}/messages`, { message }),
+};
+
+// Support Tickets API
+export const supportAPI = {
+  create: (data: { subject: string; message: string; category?: string; priority?: string; rental_id?: number }) =>
+    api.post('/support', data),
+  list: (status?: string) => api.get('/support', { params: { status } }),
+  get: (ticketId: number) => api.get(`/support/${ticketId}`),
+  addMessage: (ticketId: number, message: string) => api.post(`/support/${ticketId}/messages`, { message }),
 };
 
 export default api;

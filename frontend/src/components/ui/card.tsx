@@ -11,8 +11,8 @@ export default function Card({ children, className, hover = false }: CardProps) 
   return (
     <div
       className={cn(
-        'neon-card rounded-xl p-6',
-        hover && 'hover:border-primary-400/30 hover:shadow-[0_0_20px_rgba(0,240,255,0.05)] transition-all duration-300 cursor-pointer',
+        'neon-card rounded-xl p-6 min-w-0',
+        hover && 'hover:border-primary-400/30 hover:shadow-[0_0_20px_rgba(251,146,60,0.08)] transition-all duration-300 cursor-pointer',
         className,
       )}
     >

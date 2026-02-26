@@ -6,11 +6,11 @@ import Link from 'next/link';
 const faqs = [
   {
     q: 'How do I rent a mining rig?',
-    a: 'Go to the Marketplace, browse available rigs, select one, choose your duration, enter your pool credentials, and confirm the rental. The cost will be deducted from your USDT balance.',
+    a: 'Go to the Marketplace, browse available rigs, select one, choose your duration, enter your pool credentials, and confirm the rental. The cost will be deducted from your LTC balance.',
   },
   {
-    q: 'How do I deposit USDT?',
-    a: 'Navigate to the Wallet page, click "Deposit", and send USDT (BEP-20) to the displayed platform wallet address. Enter the transaction hash to confirm your deposit.',
+    q: 'How do I deposit LTC?',
+    a: 'Navigate to the Wallet page, click "Deposit", and send LTC to your unique deposit address shown on the page. Your balance is credited automatically after 1 confirmation (~2.5 min).',
   },
   {
     q: 'How do I list my mining rig?',
@@ -22,7 +22,7 @@ const faqs = [
   },
   {
     q: 'How do withdrawals work?',
-    a: 'Go to Wallet, click "Withdraw", enter the amount and your BSC wallet address. Withdrawals require admin approval and are processed within 24 hours.',
+    a: 'Go to Wallet, click "Withdraw", enter the amount and your Litecoin wallet address (ltc1... or L...). Withdrawals require admin approval and are processed within 24 hours.',
   },
   {
     q: 'What happens if a rig goes offline during my rental?',

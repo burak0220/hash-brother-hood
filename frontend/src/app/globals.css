@@ -3,17 +3,17 @@
 @tailwind utilities;
 
 :root {
-  --background: #050a0e;
-  --foreground: #e0f0f0;
-  --card: #0a1418;
-  --card-hover: #0f1e24;
-  --border: #0d2a2a;
-  --neon: #00f0ff;
-  --neon-dim: #00f0ff50;
-  --gold: #f0b000;
-  --gold-dim: #f0b00040;
+  --background: #090909;
+  --foreground: #e8e8e8;
+  --card: #141414;
+  --card-hover: #1c1c1c;
+  --border: #1c1c1c;
+  --neon: #fb923c;
+  --neon-dim: #fb923c50;
+  --gold: #f59e0b;
+  --gold-dim: #f59e0b40;
   --success: #00ff88;
-  --warning: #f0b000;
+  --warning: #f59e0b;
   --danger: #ff3355;
 }
 
@@ -23,19 +23,19 @@ body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
-/* Neon Glow Effects */
+/* Neon Glow Effects — orange/mining theme */
 .neon-text {
-  color: #00f0ff;
-  text-shadow: 0 0 7px #00f0ff, 0 0 20px #00f0ff40, 0 0 40px #00f0ff20;
+  color: #fb923c;
+  text-shadow: 0 0 7px #fb923c, 0 0 20px #fb923c40, 0 0 40px #fb923c20;
 }
 
 .gold-text {
-  color: #f0b000;
-  text-shadow: 0 0 7px #f0b00080, 0 0 20px #f0b00030;
+  color: #f59e0b;
+  text-shadow: 0 0 7px #f59e0b80, 0 0 20px #f59e0b30;
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, #00f0ff 0%, #00ff88 50%, #f0b000 100%);
+  background: linear-gradient(135deg, #fb923c 0%, #f59e0b 50%, #fcd34d 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -43,21 +43,21 @@ body {
 
 /* Glass Card */
 .glass {
-  background: rgba(10, 20, 24, 0.85);
+  background: rgba(20, 20, 20, 0.85);
   backdrop-filter: blur(16px);
-  border: 1px solid rgba(0, 240, 255, 0.08);
+  border: 1px solid rgba(251, 146, 60, 0.08);
 }
 
 .glass-hover:hover {
-  background: rgba(15, 30, 36, 0.9);
-  border-color: rgba(0, 240, 255, 0.2);
-  box-shadow: 0 0 20px rgba(0, 240, 255, 0.05);
+  background: rgba(28, 28, 28, 0.9);
+  border-color: rgba(251, 146, 60, 0.2);
+  box-shadow: 0 0 20px rgba(251, 146, 60, 0.05);
 }
 
 /* Neon Border Card */
 .neon-card {
-  background: linear-gradient(180deg, #0a1418 0%, #060d10 100%);
-  border: 1px solid #0d2a2a;
+  background: linear-gradient(180deg, #141414 0%, #0e0e0e 100%);
+  border: 1px solid #1c1c1c;
   position: relative;
   overflow: hidden;
 }
@@ -69,20 +69,20 @@ body {
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, #00f0ff, transparent);
+  background: linear-gradient(90deg, transparent, #fb923c, transparent);
   opacity: 0.5;
 }
 
 .neon-card:hover {
-  border-color: rgba(0, 240, 255, 0.3);
-  box-shadow: 0 0 30px rgba(0, 240, 255, 0.08), inset 0 0 30px rgba(0, 240, 255, 0.02);
+  border-color: rgba(251, 146, 60, 0.3);
+  box-shadow: 0 0 30px rgba(251, 146, 60, 0.08), inset 0 0 30px rgba(251, 146, 60, 0.02);
 }
 
 /* Grid Pattern Background */
 .grid-bg {
   background-image:
-    linear-gradient(rgba(0, 240, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
+    linear-gradient(rgba(251, 146, 60, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(251, 146, 60, 0.03) 1px, transparent 1px);
   background-size: 60px 60px;
 }
 
@@ -95,34 +95,34 @@ body {
     0deg,
     transparent,
     transparent 2px,
-    rgba(0, 240, 255, 0.01) 2px,
-    rgba(0, 240, 255, 0.01) 4px
+    rgba(251, 146, 60, 0.01) 2px,
+    rgba(251, 146, 60, 0.01) 4px
   );
   pointer-events: none;
 }
 
-/* Neon Button Glow */
+/* Primary Button */
 .btn-neon {
-  background: linear-gradient(135deg, #00f0ff, #00c8d4);
-  color: #050a0e;
+  background: linear-gradient(135deg, #fb923c, #ea580c);
+  color: #090909;
   font-weight: 700;
-  box-shadow: 0 0 15px rgba(0, 240, 255, 0.3), 0 0 40px rgba(0, 240, 255, 0.1);
+  box-shadow: 0 0 15px rgba(251, 146, 60, 0.3), 0 0 40px rgba(251, 146, 60, 0.1);
   transition: all 0.3s;
 }
 .btn-neon:hover {
-  box-shadow: 0 0 20px rgba(0, 240, 255, 0.5), 0 0 60px rgba(0, 240, 255, 0.2);
+  box-shadow: 0 0 20px rgba(251, 146, 60, 0.5), 0 0 60px rgba(251, 146, 60, 0.2);
   transform: translateY(-1px);
 }
 
 .btn-gold {
-  background: linear-gradient(135deg, #f0b000, #d4990a);
-  color: #050a0e;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #090909;
   font-weight: 700;
-  box-shadow: 0 0 15px rgba(240, 176, 0, 0.3);
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.3);
   transition: all 0.3s;
 }
 .btn-gold:hover {
-  box-shadow: 0 0 20px rgba(240, 176, 0, 0.5), 0 0 60px rgba(240, 176, 0, 0.15);
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.5), 0 0 60px rgba(245, 158, 11, 0.15);
   transform: translateY(-1px);
 }
 
@@ -132,14 +132,14 @@ body {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #050a0e;
+  background: #090909;
 }
 ::-webkit-scrollbar-thumb {
-  background: #0d2a2a;
+  background: #242424;
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #00f0ff30;
+  background: #fb923c30;
 }
 
 /* Animations */
@@ -188,13 +188,13 @@ body {
   position: absolute;
   width: 2px;
   height: 2px;
-  background: #00f0ff;
+  background: #fb923c;
   border-radius: 50%;
-  box-shadow: 0 0 6px #00f0ff;
+  box-shadow: 0 0 6px #fb923c;
   animation: float 4s ease-in-out infinite;
 }
 
-/* Logo seamless blend - kenarları eritir, dikdörtgen görünümü kaldırır */
+/* Logo seamless blend */
 .logo-blend {
   mask-image: radial-gradient(ellipse 85% 80% at center, black 40%, transparent 72%);
   -webkit-mask-image: radial-gradient(ellipse 85% 80% at center, black 40%, transparent 72%);
@@ -210,7 +210,7 @@ body {
   -webkit-mask-image: radial-gradient(ellipse 80% 75% at center, black 35%, transparent 68%);
 }
 
-/* Auth sayfası logosu için premium tasarım */
+/* Auth page logo */
 .logo-auth {
   mask-image: radial-gradient(ellipse 92% 88% at center, black 60%, rgba(0,0,0,0.8) 75%, transparent 85%);
   -webkit-mask-image: radial-gradient(ellipse 92% 88% at center, black 60%, rgba(0,0,0,0.8) 75%, transparent 85%);
@@ -223,22 +223,22 @@ body {
   transform: scale(1.02);
 }
 
-/* Logo container için backdrop */
+/* Logo container backdrop */
 .logo-container-auth {
   position: relative;
   padding: 1.5rem;
-  background: linear-gradient(135deg, rgba(0,240,255,0.03) 0%, rgba(138,43,226,0.03) 100%);
+  background: linear-gradient(135deg, rgba(251,146,60,0.04) 0%, rgba(234,88,12,0.03) 100%);
   border-radius: 24px;
-  border: 1px solid rgba(0,240,255,0.1);
+  border: 1px solid rgba(251,146,60,0.12);
   backdrop-filter: blur(10px);
   transition: all 0.4s ease;
   animation: logoEntrance 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
 .logo-container-auth:hover {
-  background: linear-gradient(135deg, rgba(0,240,255,0.05) 0%, rgba(138,43,226,0.05) 100%);
-  border-color: rgba(0,240,255,0.15);
-  box-shadow: 0 0 60px rgba(0,240,255,0.15);
+  background: linear-gradient(135deg, rgba(251,146,60,0.06) 0%, rgba(234,88,12,0.05) 100%);
+  border-color: rgba(251,146,60,0.2);
+  box-shadow: 0 0 60px rgba(251,146,60,0.12);
 }
 
 @keyframes logoEntrance {

@@ -3,7 +3,7 @@ import './globals.css';
 import Providers from './providers';
 
 export const metadata: Metadata = {
-  title: 'HashBrotherHood - Mining Hashrate Rental',
+  title: 'HashBrotherHood - Hashrate Marketplace',
   description: 'Professional mining hashrate rental marketplace',
 };
 

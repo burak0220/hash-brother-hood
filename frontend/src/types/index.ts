@@ -9,7 +9,7 @@ export interface User {
   totp_enabled: boolean;
   avatar_url: string | null;
   bio: string | null;
-  bsc_wallet_address: string | null;
+  ltc_wallet_address: string | null;
   deposit_address: string | null;
   referral_code: string | null;
   created_at: string;
@@ -21,6 +21,10 @@ export interface Algorithm {
   display_name: string;
   unit: string;
   description: string | null;
+  coins: string | null;
+  diff_suggested: number | null;
+  diff_min: number | null;
+  diff_max: number | null;
   is_active: boolean;
 }
 
@@ -45,6 +49,18 @@ export interface Rig {
   stratum_port: number | null;
   worker_prefix: string | null;
   is_featured: boolean;
+  // MRR features
+  rpi_score: number;
+  suggested_difficulty: string | null;
+  optimal_diff_min: number | null;
+  optimal_diff_max: number | null;
+  ndevices: number;
+  extensions_enabled: boolean;
+  auto_price_enabled: boolean;
+  auto_price_margin: number;
+  owner_pool_url: string | null;
+  owner_pool_user: string | null;
+  owner_pool_password: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -61,6 +77,7 @@ export interface Rental {
   id: number;
   rig_id: number;
   rig_name: string | null;
+  rig_region: string | null;
   renter_id: number;
   renter: UserPublic | null;
   owner_id: number;
@@ -71,16 +88,99 @@ export interface Rental {
   price_per_hour: number;
   duration_hours: number | null;
   total_cost: number;
+  escrow_amount: number;
+  escrow_released: boolean;
   status: string;
+  // 5-pool failover
   pool_url: string | null;
   pool_user: string | null;
   pool_password: string | null;
+  pool2_url: string | null;
+  pool2_user: string | null;
+  pool2_password: string | null;
+  pool3_url: string | null;
+  pool3_user: string | null;
+  pool3_password: string | null;
+  pool4_url: string | null;
+  pool4_user: string | null;
+  pool4_password: string | null;
+  pool5_url: string | null;
+  pool5_user: string | null;
+  pool5_password: string | null;
+  // Extension info
+  original_duration_hours: number | null;
+  extended_hours: number;
+  extension_cost: number;
+  extensions_disabled: boolean;
+  // Share-based refund
+  expected_shares: number;
+  actual_shares: number;
+  rejected_shares: number;
+  refund_amount: number;
+  refund_reason: string | null;
+  reviewed_at: string | null;
+  // RPI snapshot
+  rpi_at_start: number | null;
+  // Performance
+  actual_hashrate_avg: number | null;
+  performance_percent: number | null;
+  // Timestamps
+  dispute_window_ends: string | null;
   started_at: string | null;
   ends_at: string | null;
   completed_at: string | null;
   cancelled_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface PoolProfile {
+  id: number;
+  user_id: number;
+  name: string;
+  algorithm_id: number | null;
+  algorithm_name: string | null;
+  pool_url: string;
+  pool_user: string;
+  pool_password: string;
+  // 5-pool failover
+  pool2_url: string | null;
+  pool2_user: string | null;
+  pool2_password: string | null;
+  pool3_url: string | null;
+  pool3_user: string | null;
+  pool3_password: string | null;
+  pool4_url: string | null;
+  pool4_user: string | null;
+  pool4_password: string | null;
+  pool5_url: string | null;
+  pool5_user: string | null;
+  pool5_password: string | null;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RentalMessage {
+  id: number;
+  rental_id: number;
+  sender_id: number;
+  sender_username: string | null;
+  content: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface RentalConversation {
+  rental_id: number;
+  rig_name: string;
+  status: string;
+  other_username: string | null;
+  other_id: number | null;
+  role: 'renter' | 'owner';
+  last_message: string | null;
+  last_message_at: string | null;
+  unread_count: number;
 }
 
 export interface RentalListResponse {
@@ -149,6 +249,15 @@ export interface UserPublic {
   created_at: string;
 }
 
+export interface DisputeMessage {
+  id: number;
+  sender_id: number;
+  sender_username: string | null;
+  content: string;
+  created_at: string;
+}
+
+// Legacy general messaging types (deprecated - use rental communications instead)
 export interface MessageItem {
   id: number;
   sender_id: number;
@@ -165,14 +274,6 @@ export interface Conversation {
   last_message: string;
   last_message_at: string;
   unread_count: number;
-}
-
-export interface DisputeMessage {
-  id: number;
-  sender_id: number;
-  sender_username: string | null;
-  content: string;
-  created_at: string;
 }
 
 export interface Dispute {

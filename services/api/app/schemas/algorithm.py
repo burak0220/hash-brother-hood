@@ -7,6 +7,10 @@ class AlgorithmResponse(BaseModel):
     display_name: str
     unit: str
     description: str | None = None
+    coins: str | None = None
+    diff_suggested: int | None = None
+    diff_min: int | None = None
+    diff_max: int | None = None
     is_active: bool
 
     class Config:

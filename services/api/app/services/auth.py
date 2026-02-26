@@ -47,6 +47,9 @@ async def register_user(db: AsyncSession, email: str, username: str, password: s
         user.deposit_hd_index = user.id
         await db.flush()
         logger.info(f"Generated deposit address for user {user.id}: {deposit_address}")
+        # Import into LTC node so listunspent can track it
+        from app.services.blockchain import import_address
+        await import_address(deposit_address)
     except Exception as e:
         logger.warning(f"Failed to generate deposit address for user {user.id}: {e}")
         # Don't fail registration if address generation fails

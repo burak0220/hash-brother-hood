@@ -22,7 +22,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
               <img
                 src="/logo.svg"
                 alt="HashBrotherHood"
-                className="mx-auto w-[260px] h-auto drop-shadow-[0_0_30px_rgba(0,240,255,0.15)] hover:drop-shadow-[0_0_40px_rgba(0,240,255,0.25)] transition-all duration-500"
+                className="mx-auto w-[260px] h-auto drop-shadow-[0_0_30px_rgba(251,146,60,0.2)] hover:drop-shadow-[0_0_40px_rgba(251,146,60,0.3)] transition-all duration-500"
               />
             </div>
           </Link>
